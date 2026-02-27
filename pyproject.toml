@@ -1,0 +1,42 @@
+[project]
+name = "vehicle-sim"
+version = "0.2.0"
+description = "3D Multi-Vehicle Simulation with MCP Chat, Vector DB, and Algorithm Framework"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "httpx>=0.27",
+    "ollama>=0.4",
+    "qdrant-client>=1.12",
+    "psycopg2-binary>=2.9",
+    "sentence-transformers>=3.3",
+    "python-dotenv>=1.0",
+    "jinja2>=3.1",
+    "numpy>=1.26",
+    "cryptography>=42.0",
+    "pathfinding3d>=0.7.2",
+    "pre-commit>=4.5.1",
+    "matplotlib>=3.10.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+ignore = ["E402"]

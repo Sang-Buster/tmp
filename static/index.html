@@ -1,0 +1,1205 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/static/img/favicon.png" />
+    <title>Swarm Squad Ep1 - Surviving the Jam</title>
+    <!-- Tailwind CSS Play CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        safelist: [
+          "translate-x-5",
+          "bg-green-500",
+          "bg-muted",
+          "bg-success",
+          "bg-purple-500",
+          "bg-destructive",
+          "border-purple-500/30",
+          "bg-purple-500/5",
+          "bg-purple-500/10",
+          "bg-purple-500/15",
+          "bg-purple-500/20",
+          "border-pink-500/30",
+          "bg-pink-500/5",
+          "bg-pink-500/10",
+          "border-violet-500/30",
+          "bg-violet-500/5",
+          "bg-violet-500/10",
+          "hidden",
+          "flex",
+          "rotate-180",
+        ],
+        theme: {
+          extend: {
+            colors: {
+              border: "hsl(240 3.7% 15.9%)",
+              input: "hsl(240 3.7% 15.9%)",
+              ring: "hsl(240 4.9% 83.9%)",
+              background: "hsl(240 10% 3.9%)",
+              foreground: "hsl(0 0% 98%)",
+              primary: {
+                DEFAULT: "hsl(0 0% 98%)",
+                foreground: "hsl(240 5.9% 10%)",
+              },
+              secondary: {
+                DEFAULT: "hsl(240 3.7% 15.9%)",
+                foreground: "hsl(0 0% 98%)",
+              },
+              muted: {
+                DEFAULT: "hsl(240 3.7% 15.9%)",
+                foreground: "hsl(240 5% 64.9%)",
+              },
+              accent: {
+                DEFAULT: "hsl(240 3.7% 15.9%)",
+                foreground: "hsl(0 0% 98%)",
+              },
+              destructive: {
+                DEFAULT: "hsl(0 62.8% 30.6%)",
+                foreground: "hsl(0 0% 98%)",
+              },
+              card: {
+                DEFAULT: "hsl(240 10% 3.9%)",
+                foreground: "hsl(0 0% 98%)",
+              },
+              popover: {
+                DEFAULT: "hsl(240 10% 3.9%)",
+                foreground: "hsl(0 0% 98%)",
+              },
+              success: "hsl(142 76% 36%)",
+              warning: "hsl(38 92% 50%)",
+              info: "hsl(199 89% 48%)",
+            },
+            borderRadius: {
+              lg: "0.5rem",
+              md: "calc(0.5rem - 2px)",
+              sm: "calc(0.5rem - 4px)",
+            },
+          },
+        },
+      };
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+
+      /* Custom scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: hsl(240 10% 3.9%);
+      }
+      ::-webkit-scrollbar-thumb {
+        background: hsl(240 3.7% 25%);
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: hsl(240 3.7% 35%);
+      }
+
+      /* Axis indicator */
+      #axis-indicator {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        width: 80px;
+        height: 80px;
+        background: transparent;
+        z-index: 100;
+      }
+
+      /* Lucide icons */
+      [data-lucide] {
+        width: 16px;
+        height: 16px;
+      }
+      .icon-sm {
+        width: 14px;
+        height: 14px;
+      }
+      .icon-xs {
+        width: 12px;
+        height: 12px;
+      }
+    </style>
+  </head>
+  <body class="bg-background text-foreground min-h-screen">
+    <!-- Header -->
+    <header
+      class="h-14 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-6"
+    >
+      <div class="flex items-center gap-3">
+        <h1 class="text-lg font-semibold tracking-tight">
+          Swarm Squad Ep1 - Surviving the Jam
+        </h1>
+        <span
+          class="text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded-full"
+          >v0.1</span
+        >
+      </div>
+      <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2 text-sm">
+          <span
+            class="w-2 h-2 rounded-full bg-success animate-pulse"
+            id="sim-status"
+          ></span>
+          <span class="text-muted-foreground">Sim</span>
+        </div>
+        <div class="flex items-center gap-2 text-sm">
+          <span class="w-2 h-2 rounded-full bg-success" id="llm-status"></span>
+          <span class="text-muted-foreground">LLM</span>
+        </div>
+        <div class="flex items-center gap-2 text-sm">
+          <span class="w-2 h-2 rounded-full bg-success" id="db-status"></span>
+          <span class="text-muted-foreground">DB</span>
+        </div>
+        <div class="flex items-center gap-2 text-sm" id="mavlink-indicator">
+          <span class="w-2 h-2 rounded-full bg-purple-400" id="mavlink-status"></span>
+          <span class="text-muted-foreground">MAVLink</span>
+        </div>
+        <div class="flex items-center gap-2 text-sm hidden" id="crypto-indicator">
+          <span class="w-2 h-2 rounded-full bg-green-400" id="crypto-status-dot"></span>
+          <span class="text-muted-foreground">Crypto</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main content -->
+    <main class="grid grid-cols-[1fr_380px] h-[calc(100vh-3.5rem)]">
+      <!-- 3D Scene -->
+      <div
+        id="scene-container"
+        class="relative bg-[hsl(240_10%_4%)] overflow-hidden"
+      >
+        <div id="axis-indicator"></div>
+        <!-- Controls overlay -->
+        <div
+          class="absolute top-3 left-3 bg-card/80 backdrop-blur-sm border border-border rounded-lg p-3 text-xs space-y-1.5"
+        >
+          <p
+            class="font-medium text-muted-foreground flex items-center gap-1.5"
+          >
+            <i data-lucide="mouse-pointer-2" class="icon-xs"></i> Controls
+          </p>
+          <p class="text-muted-foreground/70">
+            <i data-lucide="move-3d" class="icon-xs inline mr-1"></i>Left drag:
+            Rotate
+          </p>
+          <p class="text-muted-foreground/70">
+            <i data-lucide="hand" class="icon-xs inline mr-1"></i>Right drag:
+            Pan
+          </p>
+          <p class="text-muted-foreground/70">
+            <i data-lucide="search" class="icon-xs inline mr-1"></i>Scroll: Zoom
+          </p>
+        </div>
+
+        <!-- Visualization Toggles (bottom-left) -->
+        <div
+          id="viz-toggles"
+          class="absolute bottom-3 left-3 bg-card/90 backdrop-blur-sm border border-border rounded-lg p-2.5 text-xs"
+        >
+          <p
+            class="text-[10px] text-muted-foreground mb-1.5 font-medium uppercase tracking-wide"
+          >
+            Display
+          </p>
+          <div class="flex items-center gap-2">
+            <label
+              class="flex items-center gap-2 cursor-pointer hover:text-foreground text-muted-foreground"
+            >
+              <input
+                type="checkbox"
+                id="toggle-trails"
+                checked
+                class="w-3 h-3 rounded accent-amber-500"
+              />
+              <span>Trails</span>
+            </label>
+            <select
+              id="trail-length"
+              class="bg-background border border-border rounded px-1 py-0.5 text-[10px] text-muted-foreground"
+            >
+              <option value="short">Short</option>
+              <option value="all">All</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Path Planning Mini-Map -->
+        <div
+          id="pathplan-minimap"
+          class="absolute bottom-3 right-3 bg-card/95 backdrop-blur-sm border border-border rounded-lg p-2 hidden cursor-pointer hover:border-purple-500/50 transition-colors"
+          style="width: 200px"
+          onclick="MiniMap.showModal()"
+          title="Click to enlarge"
+        >
+          <div class="flex items-center justify-between mb-1.5">
+            <p
+              class="text-xs font-medium text-muted-foreground flex items-center gap-1"
+            >
+              <i data-lucide="map" class="icon-xs"></i> Grid Map
+            </p>
+            <div class="flex items-center gap-1.5">
+              <span
+                id="minimap-algo"
+                class="text-xs text-purple-400 font-medium"
+                >A*</span
+              >
+              <i
+                data-lucide="maximize-2"
+                class="w-3 h-3 text-muted-foreground/60"
+              ></i>
+            </div>
+          </div>
+          <canvas
+            id="minimap-canvas"
+            class="bg-[hsl(240_10%_8%)] rounded"
+          ></canvas>
+          <div
+            class="mt-1.5 grid grid-cols-4 gap-1 text-[10px] text-muted-foreground"
+          >
+            <span class="flex items-center gap-1"
+              ><span class="w-1.5 h-1.5 bg-green-500 rotate-45"></span
+              >Agent</span
+            >
+            <span class="flex items-center gap-1"
+              ><span class="w-2 h-2 rounded-full border border-cyan-400"></span
+              >Goal</span
+            >
+            <span class="flex items-center gap-1"
+              ><span class="w-1.5 h-1.5 rounded-full bg-red-500/70"></span
+              >Jam</span
+            >
+            <span class="flex items-center gap-1"
+              ><span class="w-3 h-0.5 bg-cyan-400"></span>Path</span
+            >
+          </div>
+        </div>
+
+        <!-- Mini-Map Enlarged Modal -->
+        <div
+          id="minimap-modal"
+          class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden z-50 flex items-center justify-center"
+          onclick="MiniMap.hideModal(event)"
+        >
+          <div
+            class="bg-card border border-border rounded-xl p-5 shadow-2xl max-w-[680px]"
+            onclick="event.stopPropagation()"
+          >
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="map" class="w-5 h-5 text-purple-400"></i>
+                <span class="font-medium">Path Planning Grid</span>
+                <span
+                  id="minimap-modal-algo"
+                  class="text-sm text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded"
+                  >A*</span
+                >
+              </div>
+              <button
+                onclick="MiniMap.hideModal()"
+                class="p-1 hover:bg-secondary rounded"
+              >
+                <i data-lucide="x" class="w-5 h-5 text-muted-foreground"></i>
+              </button>
+            </div>
+            <canvas
+              id="minimap-canvas-large"
+              class="bg-[hsl(240_10%_8%)] rounded-lg"
+            ></canvas>
+            <div
+              class="mt-3 flex items-center justify-center gap-6 text-xs text-muted-foreground"
+            >
+              <span class="flex items-center gap-1.5">
+                <span
+                  class="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-b-[8px] border-b-green-500"
+                ></span>
+                Agents
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span
+                  class="w-3.5 h-3.5 rounded-full border-2 border-cyan-400 flex items-center justify-center"
+                >
+                  <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                </span>
+                Destination
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span
+                  class="w-3 h-3 rounded-full bg-gray-400/50 border border-gray-400"
+                ></span>
+                Phys
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span
+                  class="w-3 h-3 rounded-full bg-yellow-400/40 border border-yellow-400"
+                ></span>
+                Low
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span
+                  class="w-3 h-3 rounded-full bg-red-500/40 border border-red-500"
+                ></span>
+                High
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span class="w-6 h-0.5 bg-cyan-400"></span>
+                Path
+              </span>
+            </div>
+            <p class="text-xs text-muted-foreground/60 text-center mt-2">
+              A* computes a single path from swarm center to destination (shared
+              by all agents)
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sidebar -->
+      <div class="bg-card border-l border-border flex flex-col overflow-y-auto">
+        <!-- Agents Panel -->
+        <div class="border-b border-border">
+          <button
+            onclick="togglePanel('agents')"
+            class="w-full px-4 py-3 flex items-center justify-between hover:bg-secondary/50 transition-colors"
+          >
+            <div class="flex items-center gap-2">
+              <i data-lucide="car" class="icon-sm text-info"></i>
+              <span class="font-medium text-sm">Agents</span>
+              <span
+                class="text-xs text-muted-foreground bg-secondary px-1.5 py-0.5 rounded"
+                id="agent-count"
+                >0</span
+              >
+            </div>
+            <i
+              data-lucide="chevron-down"
+              class="icon-sm text-muted-foreground transition-transform"
+              id="agents-chevron"
+            ></i>
+          </button>
+          <div class="hidden px-3 pb-3" id="agents-content">
+            <div
+              id="agent-list"
+              class="space-y-2 max-h-48 overflow-y-auto mb-2"
+            >
+              <p class="text-xs text-muted-foreground py-2">
+                Loading agents...
+              </p>
+            </div>
+            <button
+              onclick="showAddAgentModal()"
+              class="w-full text-xs py-2 px-3 rounded-md border border-dashed border-border hover:bg-secondary/50 hover:border-muted-foreground/50 transition-colors flex items-center justify-center gap-1.5 text-muted-foreground"
+            >
+              <i data-lucide="plus" class="icon-xs"></i> Add Agent
+            </button>
+          </div>
+        </div>
+
+        <!-- Jamming Zones Panel -->
+        <div class="border-b border-border">
+          <button
+            onclick="togglePanel('jamming')"
+            class="w-full px-4 py-3 flex items-center justify-between hover:bg-secondary/50 transition-colors"
+          >
+            <div class="flex items-center gap-2">
+              <i data-lucide="radio-tower" class="icon-sm text-destructive"></i>
+              <span class="font-medium text-sm">Jamming Zones</span>
+              <span
+                class="text-xs text-muted-foreground bg-secondary px-1.5 py-0.5 rounded"
+                id="jamming-count"
+                >0</span
+              >
+            </div>
+            <i
+              data-lucide="chevron-down"
+              class="icon-sm text-muted-foreground transition-transform"
+              id="jamming-chevron"
+            ></i>
+          </button>
+          <div class="hidden px-3 pb-3" id="jamming-content">
+            <div
+              id="jamming-list"
+              class="space-y-2 max-h-32 overflow-y-auto mb-2"
+            >
+              <!-- Zones appear here -->
+            </div>
+            <button
+              onclick="showAddJammingModal()"
+              class="w-full text-xs py-2 px-3 rounded-md border border-dashed border-border hover:bg-secondary/50 hover:border-muted-foreground/50 transition-colors flex items-center justify-center gap-1.5 text-muted-foreground"
+            >
+              <i data-lucide="plus" class="icon-xs"></i> Add Zone
+            </button>
+          </div>
+        </div>
+
+        <!-- Spoofing Zones Panel -->
+        <div class="border-b border-border">
+          <button
+            onclick="togglePanel('spoofing')"
+            class="w-full px-4 py-3 flex items-center justify-between hover:bg-secondary/50 transition-colors"
+          >
+            <div class="flex items-center gap-2">
+              <i data-lucide="shield-alert" class="icon-sm text-purple-400"></i>
+              <span class="font-medium text-sm">Spoofing Zones</span>
+              <span
+                class="text-xs text-muted-foreground bg-secondary px-1.5 py-0.5 rounded"
+                id="spoofing-count"
+                >0</span
+              >
+            </div>
+            <i
+              data-lucide="chevron-down"
+              class="icon-sm text-muted-foreground transition-transform"
+              id="spoofing-chevron"
+            ></i>
+          </button>
+          <div class="hidden px-3 pb-3" id="spoofing-content">
+            <div
+              id="spoofing-list"
+              class="space-y-2 max-h-32 overflow-y-auto mb-2"
+            >
+              <!-- Spoofing zones appear here -->
+            </div>
+            <button
+              onclick="showAddSpoofingModal()"
+              class="w-full text-xs py-2.5 px-3 rounded-md border border-dashed border-purple-500/50 hover:bg-purple-500/10 hover:border-purple-400/50 transition-colors flex items-center justify-center gap-1.5 text-purple-300 font-medium"
+            >
+              <i data-lucide="plus" class="icon-xs"></i> Add Spoofing Zone
+            </button>
+            <!-- Protocol Stats -->
+            <div id="protocol-stats" class="mt-2 text-xs bg-secondary/50 rounded-md p-2 hidden">
+              <div class="flex items-center gap-1 mb-1 text-muted-foreground font-medium">
+                <i data-lucide="activity" class="icon-xs"></i> MAVLink Protocol
+              </div>
+              <div class="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                <span class="text-muted-foreground">Sent:</span>
+                <span id="proto-sent">0</span>
+                <span class="text-muted-foreground">Received:</span>
+                <span id="proto-received">0</span>
+                <span class="text-muted-foreground">Dropped:</span>
+                <span id="proto-dropped" class="text-yellow-400">0</span>
+                <span class="text-muted-foreground">Spoofed:</span>
+                <span id="proto-spoofed" class="text-purple-400">0</span>
+                <span class="text-muted-foreground">Crypto Rejected:</span>
+                <span id="proto-rejected" class="text-green-400">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LLM Context Panel (collapsed by default) -->
+        <div class="border-b border-border">
+          <button
+            onclick="togglePanel('llm-context')"
+            class="w-full px-4 py-3 flex items-center justify-between hover:bg-secondary/50 transition-colors"
+          >
+            <div class="flex items-center gap-2">
+              <i data-lucide="terminal" class="icon-sm text-purple-400"></i>
+              <span class="font-medium text-sm">LLM Context</span>
+              <span
+                class="text-xs text-muted-foreground bg-secondary px-1.5 py-0.5 rounded"
+                id="llm-context-count"
+                >0 assisted</span
+              >
+            </div>
+            <i
+              data-lucide="chevron-down"
+              class="icon-sm text-muted-foreground transition-transform"
+              id="llm-context-chevron"
+            ></i>
+          </button>
+          <div class="hidden px-3 pb-3" id="llm-context-content">
+            <div class="space-y-2">
+              <!-- Assisted Agents -->
+              <div class="text-xs text-muted-foreground mb-1">
+                Agents Being Assisted
+              </div>
+              <div
+                id="llm-assisted-agents"
+                class="text-xs space-y-1 max-h-24 overflow-y-auto"
+              >
+                <div class="text-muted-foreground/60 italic">None</div>
+              </div>
+
+              <!-- Active Guidance -->
+              <div class="text-xs text-muted-foreground mt-3 mb-1">
+                Active Guidance
+              </div>
+              <div
+                id="llm-active-guidance"
+                class="text-xs space-y-1 max-h-32 overflow-y-auto"
+              >
+                <div class="text-muted-foreground/60 italic">None</div>
+              </div>
+
+              <!-- Last Prompt Preview -->
+              <div class="text-xs text-muted-foreground mt-3 mb-1">
+                Last LLM Prompt
+              </div>
+              <div
+                id="llm-last-prompt"
+                class="text-xs font-mono bg-secondary/50 rounded p-2 h-48 overflow-y-auto text-purple-200/80 scrollbar-thin scrollbar-thumb-secondary scrollbar-track-transparent"
+              >
+                <span class="text-muted-foreground/60 italic"
+                  >No prompts yet</span
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Algorithm Control Panel -->
+        <div class="border-b border-border">
+          <button
+            onclick="togglePanel('algo')"
+            class="w-full px-4 py-3 flex items-center justify-between hover:bg-secondary/50 transition-colors"
+          >
+            <div class="flex items-center gap-2">
+              <i data-lucide="settings-2" class="icon-sm text-warning"></i>
+              <span class="font-medium text-sm">Algorithm Control</span>
+            </div>
+            <i
+              data-lucide="chevron-down"
+              class="icon-sm text-muted-foreground transition-transform rotate-180"
+              id="algo-chevron"
+            ></i>
+          </button>
+          <div class="px-3 pb-3 space-y-3" id="algo-content">
+            <!-- Formation -->
+            <div class="space-y-1.5">
+              <label class="text-xs text-muted-foreground">Formation</label>
+              <select
+                id="formation-select"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="communication_aware" selected>
+                  Communication-Aware
+                </option>
+                <option value="v_formation">V-Formation</option>
+                <option value="line">Line</option>
+                <option value="circle">Circle</option>
+                <option value="wedge">Wedge</option>
+                <option value="column">Column</option>
+                <option value="diamond">Diamond</option>
+              </select>
+            </div>
+            <!-- Path Algorithm -->
+            <div class="space-y-1.5">
+              <label class="text-xs text-muted-foreground"
+                >Path Algorithm</label
+              >
+              <select
+                id="path-algo-select"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="direct">Direct</option>
+                <option value="astar" selected>A* (A-Star)</option>
+                <option value="theta_star">Theta*</option>
+                <option value="dijkstra">Dijkstra</option>
+                <option value="bfs">BFS</option>
+                <option value="greedy">Greedy</option>
+                <option value="bi_astar">Bidirectional A*</option>
+              </select>
+            </div>
+            <!-- Crypto Auth Section -->
+            <div class="space-y-2 pt-2 border-t border-border/50">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="shield-check" class="icon-xs text-green-400"></i>
+                  <label class="text-xs text-muted-foreground">Encryption</label>
+                </div>
+                <button
+                  id="crypto-toggle"
+                  onclick="toggleCryptoAuth()"
+                  class="relative w-10 h-5 rounded-full bg-muted transition-colors"
+                  data-enabled="false"
+                >
+                  <span
+                    id="crypto-toggle-knob"
+                    class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform"
+                  ></span>
+                </button>
+              </div>
+              <!-- Algorithm Selector -->
+              <div class="space-y-1">
+                <label class="text-xs text-muted-foreground">Algorithm</label>
+                <select
+                  id="crypto-algo-select"
+                  onchange="setCryptoAlgorithm(this.value)"
+                  class="w-full h-8 px-2 text-xs bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="hmac_sha256" selected>HMAC-SHA256 (MAC only)</option>
+                  <option value="chacha20_poly1305">ChaCha20-Poly1305 (AEAD)</option>
+                  <option value="aes_256_ctr">AES-256-CTR + HMAC (Encrypt-then-MAC)</option>
+                </select>
+              </div>
+              <div id="crypto-status" class="text-xs text-muted-foreground/60 hidden">
+                <div class="flex justify-between">
+                  <span>Verified:</span>
+                  <span id="crypto-accepted" class="text-green-400">0</span>
+                </div>
+                <div class="flex justify-between">
+                  <span>Rejected:</span>
+                  <span id="crypto-rejected-count" class="text-red-400">0</span>
+                </div>
+                <div class="flex justify-between">
+                  <span>Avg Sign:</span>
+                  <span id="crypto-sign-time">0</span><span class="text-muted-foreground/40">µs</span>
+                </div>
+                <div class="flex justify-between">
+                  <span>Avg Verify:</span>
+                  <span id="crypto-verify-time">0</span><span class="text-muted-foreground/40">µs</span>
+                </div>
+              </div>
+            </div>
+            <!-- LLM Assistance Toggle -->
+            <div class="space-y-1.5 pt-2 border-t border-border/50">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <label class="text-xs text-muted-foreground"
+                    >LLM Assistance</label
+                  >
+                </div>
+                <button
+                  id="llm-toggle"
+                  onclick="toggleLLMAssistance()"
+                  class="relative w-10 h-5 rounded-full bg-success transition-colors"
+                  data-enabled="true"
+                >
+                  <span
+                    id="llm-toggle-knob"
+                    class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform translate-x-5"
+                  ></span>
+                </button>
+              </div>
+            </div>
+            <!-- Control Buttons -->
+            <div class="grid grid-cols-3 gap-2 pt-1">
+              <button
+                id="btn-sim-start"
+                onclick="startSimulation()"
+                class="h-9 text-xs font-medium rounded-md bg-success hover:bg-success/80 text-white transition-colors flex items-center justify-center gap-1.5"
+              >
+                <i data-lucide="play" class="icon-xs"></i> Start
+              </button>
+              <button
+                id="btn-sim-stop"
+                onclick="stopSimulation()"
+                class="h-9 text-xs font-medium rounded-md bg-destructive hover:bg-destructive/80 text-white transition-colors flex items-center justify-center gap-1.5"
+              >
+                <i data-lucide="square" class="icon-xs"></i> Stop
+              </button>
+              <button
+                id="btn-sim-reset"
+                onclick="resetSimulation()"
+                class="h-9 text-xs font-medium rounded-md bg-info hover:bg-info/80 text-white transition-colors flex items-center justify-center gap-1.5"
+              >
+                <i data-lucide="rotate-ccw" class="icon-xs"></i> Reset
+              </button>
+            </div>
+            <!-- Status -->
+            <div
+              id="formation-status"
+              class="text-xs text-muted-foreground bg-secondary/50 rounded-md p-2 hidden"
+            >
+              <!-- Formation metrics -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Panel (takes remaining space) -->
+        <div class="flex-1 flex flex-col min-h-0">
+          <div class="px-4 py-3 flex items-center gap-2 border-b border-border">
+            <i data-lucide="message-square" class="icon-sm text-info"></i>
+            <span class="font-medium text-sm">Chat Control</span>
+          </div>
+          <div id="chat-messages" class="flex-1 overflow-y-auto p-3 space-y-2">
+            <!-- Messages -->
+          </div>
+          <div class="p-3 border-t border-border">
+            <div class="flex gap-2">
+              <input
+                type="text"
+                id="chat-input"
+                placeholder="Type a command..."
+                autocomplete="off"
+                class="flex-1 h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
+              />
+              <button
+                id="chat-send"
+                class="h-9 w-9 rounded-md bg-info hover:bg-info/80 text-white flex items-center justify-center transition-colors"
+              >
+                <i data-lucide="send" class="icon-sm"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Add Jamming Zone Modal -->
+    <div
+      id="jamming-modal"
+      class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden items-center justify-center"
+    >
+      <div
+        class="bg-card border border-border rounded-lg shadow-xl w-full max-w-sm mx-4"
+      >
+        <div class="px-4 py-3 border-b border-border flex items-center gap-2">
+          <i data-lucide="radio-tower" class="icon-sm text-destructive"></i>
+          <h3 class="font-semibold">Add Jamming Zone</h3>
+        </div>
+        <div class="p-4 space-y-3">
+          <div class="grid grid-cols-3 gap-3">
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">X</label>
+              <input
+                type="number"
+                id="jam-x"
+                value="0"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">Y</label>
+              <input
+                type="number"
+                id="jam-y"
+                value="50"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">Z</label>
+              <input
+                type="number"
+                id="jam-z"
+                value="10"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          </div>
+          <div class="space-y-3">
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">Radius</label>
+              <input
+                type="number"
+                id="jam-radius"
+                value="10"
+                min="1"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">Intensity</label>
+              <div class="flex items-center gap-3">
+                <input
+                  type="range"
+                  id="jam-intensity"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value="1"
+                  class="flex-1 h-2 bg-secondary rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:cursor-pointer"
+                />
+                <span
+                  id="jam-intensity-value"
+                  class="text-sm min-w-[2.5rem] text-right"
+                  >1.0</span
+                >
+              </div>
+            </div>
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">Obstacle Type</label>
+              <select
+                id="jam-obstacle-type"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="physical">Physical (Gray)</option>
+                <option value="low_jam" selected>Low-Power Jam (Yellow)</option>
+                <option value="high_jam">High-Power Jam (Red)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="px-4 py-3 border-t border-border flex justify-end gap-2">
+          <button
+            onclick="hideAddJammingModal()"
+            class="h-9 px-4 text-sm rounded-md border border-border hover:bg-secondary transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onclick="createJammingZone()"
+            class="h-9 px-4 text-sm rounded-md bg-destructive hover:bg-destructive/80 text-white transition-colors"
+          >
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Spoofing Zone Modal -->
+    <div
+      id="spoofing-modal"
+      class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden items-center justify-center"
+    >
+      <div
+        class="bg-card border border-border rounded-lg shadow-xl w-full max-w-sm mx-4"
+      >
+        <div class="px-4 py-3 border-b border-border flex items-center gap-2">
+          <i data-lucide="shield-alert" class="icon-sm text-purple-400"></i>
+          <h3 class="font-semibold">Add Spoofing Zone</h3>
+        </div>
+        <div class="p-4 space-y-3">
+          <div class="grid grid-cols-3 gap-3">
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">X</label>
+              <input
+                type="number"
+                id="spoof-x"
+                value="20"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">Y</label>
+              <input
+                type="number"
+                id="spoof-y"
+                value="60"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">Z</label>
+              <input
+                type="number"
+                id="spoof-z"
+                value="10"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+          </div>
+          <div class="space-y-3">
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">Radius</label>
+              <input
+                type="number"
+                id="spoof-radius"
+                value="15"
+                min="1"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">Attack Type</label>
+              <select
+                id="spoof-modal-type"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                <option value="phantom" selected>Phantom (Ghost Agents)</option>
+                <option value="position_falsification">Position Falsification</option>
+                <option value="coordinate">Coordinate Attack</option>
+              </select>
+              <p class="text-xs text-muted-foreground/50 mt-1">
+                Select "None" in the Algorithm Control dropdown to disable spoofing.
+              </p>
+            </div>
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">Phantom Count</label>
+              <input
+                type="number"
+                id="spoof-phantom-count"
+                value="2"
+                min="1"
+                max="5"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">Falsification Magnitude</label>
+              <input
+                type="number"
+                id="spoof-magnitude"
+                value="8"
+                min="1"
+                step="0.5"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+          </div>
+        </div>
+        <div class="px-4 py-3 border-t border-border flex justify-end gap-2">
+          <button
+            onclick="hideAddSpoofingModal()"
+            class="h-9 px-4 text-sm rounded-md border border-border hover:bg-secondary transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onclick="createSpoofingZone()"
+            class="h-9 px-4 text-sm rounded-md bg-purple-600 hover:bg-purple-500 text-white transition-colors"
+          >
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Agent Modal -->
+    <div
+      id="agent-modal"
+      class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden items-center justify-center"
+    >
+      <div
+        class="bg-card border border-border rounded-lg shadow-xl w-full max-w-sm mx-4"
+      >
+        <div class="px-4 py-3 border-b border-border flex items-center gap-2">
+          <i data-lucide="car" class="icon-sm text-info"></i>
+          <h3 class="font-semibold">Add Agent</h3>
+        </div>
+        <div class="p-4 space-y-3">
+          <div class="grid grid-cols-3 gap-3">
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">X</label>
+              <input
+                type="number"
+                id="agent-x"
+                value="0"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">Y</label>
+              <input
+                type="number"
+                id="agent-y"
+                value="50"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <div class="space-y-1">
+              <label class="text-xs text-muted-foreground">Z</label>
+              <input
+                type="number"
+                id="agent-z"
+                value="0"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              onclick="randomizeAgentCoords()"
+              class="text-xs py-1.5 px-3 rounded-md border border-border hover:bg-secondary transition-colors text-muted-foreground"
+            >
+              <i data-lucide="shuffle" class="icon-xs inline mr-1"></i> Random
+            </button>
+            <p class="text-xs text-muted-foreground flex-1">
+              New agent will join the swarm.
+            </p>
+          </div>
+        </div>
+        <div class="px-4 py-3 border-t border-border flex justify-end gap-2">
+          <button
+            onclick="hideAddAgentModal()"
+            class="h-9 px-4 text-sm rounded-md border border-border hover:bg-secondary transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onclick="createAgentRandom()"
+            class="h-9 px-4 text-sm rounded-md border border-info text-info hover:bg-info/10 transition-colors"
+          >
+            Random
+          </button>
+          <button
+            onclick="createAgent()"
+            class="h-9 px-4 text-sm rounded-md bg-info hover:bg-info/80 text-white transition-colors"
+          >
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Simulation Results Modal -->
+    <div
+      id="results-modal"
+      class="fixed inset-0 bg-black/70 hidden items-center justify-center z-50"
+    >
+      <div
+        class="bg-card border border-border rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto"
+      >
+        <div
+          class="px-4 py-3 border-b border-border flex items-center justify-between"
+        >
+          <div class="flex items-center gap-2">
+            <i data-lucide="bar-chart-2" class="icon-sm text-success"></i>
+            <span class="font-medium">Simulation Results</span>
+          </div>
+          <button
+            onclick="hideResultsModal()"
+            class="p-1 hover:bg-secondary rounded transition-colors"
+          >
+            <i data-lucide="x" class="icon-sm"></i>
+          </button>
+        </div>
+        <div class="p-4 space-y-4">
+          <!-- Summary Stats -->
+          <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div class="bg-secondary/50 rounded-lg p-3 text-center">
+              <div class="text-xs text-muted-foreground mb-1">Duration</div>
+              <div id="results-duration" class="text-lg font-semibold">
+                0.0s
+              </div>
+            </div>
+            <div class="bg-secondary/50 rounded-lg p-3 text-center">
+              <div class="text-xs text-muted-foreground mb-1">Steps</div>
+              <div id="results-steps" class="text-lg font-semibold">0</div>
+            </div>
+            <div class="bg-secondary/50 rounded-lg p-3 text-center">
+              <div class="text-xs text-muted-foreground mb-1">Avg Jn</div>
+              <div id="results-avg-jn" class="text-lg font-semibold">0.00</div>
+            </div>
+            <div class="bg-secondary/50 rounded-lg p-3 text-center">
+              <div class="text-xs text-muted-foreground mb-1">Avg rn</div>
+              <div id="results-avg-rn" class="text-lg font-semibold">0.00</div>
+            </div>
+            <div class="bg-secondary/50 rounded-lg p-3 text-center">
+              <div class="text-xs text-muted-foreground mb-1">Avg Path</div>
+              <div id="results-avg-path" class="text-lg font-semibold">0.0</div>
+            </div>
+          </div>
+
+          <!-- Final Metrics -->
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-success/10 border border-success/30 rounded-lg p-3">
+              <div class="text-xs text-success mb-1">
+                Final Jn (Comm Quality)
+              </div>
+              <div
+                id="results-final-jn"
+                class="text-xl font-semibold text-success"
+              >
+                0.00
+              </div>
+            </div>
+            <div class="bg-info/10 border border-info/30 rounded-lg p-3">
+              <div class="text-xs text-info mb-1">Final rn (Distance)</div>
+              <div
+                id="results-final-rn"
+                class="text-xl font-semibold text-info"
+              >
+                0.00
+              </div>
+            </div>
+          </div>
+
+          <!-- Status -->
+          <div
+            id="results-status"
+            class="text-center py-2 rounded-lg bg-secondary/30"
+          >
+            <span class="text-sm text-muted-foreground"
+              >Waiting for results...</span
+            >
+          </div>
+
+          <!-- Chart Containers -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="bg-secondary/30 rounded-lg p-3">
+              <div
+                class="text-xs text-muted-foreground mb-2 flex items-center gap-2"
+              >
+                <span class="w-3 h-0.5 bg-green-500"></span>
+                Jn (Communication Quality) Over Time
+              </div>
+              <canvas
+                id="results-chart-jn"
+                class="w-full"
+                height="150"
+              ></canvas>
+            </div>
+            <div class="bg-secondary/30 rounded-lg p-3">
+              <div
+                class="text-xs text-muted-foreground mb-2 flex items-center gap-2"
+              >
+                <span class="w-3 h-0.5 bg-blue-500"></span>
+                rn (Average Distance) Over Time
+              </div>
+              <canvas
+                id="results-chart-rn"
+                class="w-full"
+                height="150"
+              ></canvas>
+            </div>
+          </div>
+
+          <!-- Download Buttons -->
+          <div class="flex flex-wrap gap-2 pt-2 border-t border-border">
+            <button
+              onclick="downloadChartAsPNG()"
+              class="flex-1 min-w-[100px] h-9 text-xs rounded-md border border-border hover:bg-secondary transition-colors flex items-center justify-center gap-1.5"
+            >
+              <i data-lucide="image" class="w-3 h-3"></i> PNG
+            </button>
+            <button
+              onclick="downloadDataAsJSON()"
+              class="flex-1 min-w-[100px] h-9 text-xs rounded-md border border-border hover:bg-secondary transition-colors flex items-center justify-center gap-1.5"
+            >
+              <i data-lucide="file-json" class="w-3 h-3"></i> JSON
+            </button>
+            <button
+              onclick="downloadDataAsCSV()"
+              class="flex-1 min-w-[100px] h-9 text-xs rounded-md border border-border hover:bg-secondary transition-colors flex items-center justify-center gap-1.5"
+            >
+              <i data-lucide="file-spreadsheet" class="w-3 h-3"></i> CSV
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Three.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <!-- App scripts -->
+    <script src="/static/js/scene3d.js"></script>
+    <script src="/static/js/chat.js"></script>
+    <script src="/static/js/app.js"></script>
+
+    <!-- Initialize -->
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        lucide.createIcons();
+
+        // Update intensity value display
+        const intensitySlider = document.getElementById("jam-intensity");
+        const intensityValue = document.getElementById("jam-intensity-value");
+        if (intensitySlider && intensityValue) {
+          intensitySlider.addEventListener("input", (e) => {
+            intensityValue.textContent = parseFloat(e.target.value).toFixed(1);
+          });
+        }
+      });
+    </script>
+  </body>
+</html>
