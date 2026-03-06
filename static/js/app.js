@@ -168,6 +168,7 @@ const App = {
     this.fetchVisualization();
     this.fetchSpoofingZones();
     this.fetchProtocolStats();
+    this.fetchLLMContext();
 
     this.updateInterval = setInterval(() => {
       this.fetchAgents();
@@ -180,8 +181,8 @@ const App = {
       }
       if (this.llmAssistanceEnabled) {
         this.fetchLLMActivity();
-        this.fetchLLMContext();
       }
+      this.fetchLLMContext();
     }, 500);
   },
 
@@ -402,6 +403,48 @@ const App = {
       } else {
         promptEl.innerHTML =
           '<span class="text-muted-foreground/60 italic">No prompts yet</span>';
+      }
+    }
+
+    // Update jamming zones
+    const jammingEl = document.getElementById("llm-jamming-zones");
+    if (jammingEl) {
+      const jammingZones = context.jamming_zones || [];
+      if (jammingZones.length > 0) {
+        jammingEl.innerHTML = jammingZones
+          .map(
+            (z) => `
+          <div class="flex justify-between items-center py-1 px-2 bg-red-500/10 rounded">
+            <span class="text-red-300">${z.id}</span>
+            <span class="text-muted-foreground">r=${z.radius}m @ (${z.center.map((c) => c.toFixed(0)).join(", ")})</span>
+          </div>
+        `,
+          )
+          .join("");
+      } else {
+        jammingEl.innerHTML =
+          '<div class="text-muted-foreground/60 italic">None</div>';
+      }
+    }
+
+    // Update spoofing zones
+    const spoofingEl = document.getElementById("llm-spoofing-zones");
+    if (spoofingEl) {
+      const spoofingZones = context.spoofing_zones || [];
+      if (spoofingZones.length > 0) {
+        spoofingEl.innerHTML = spoofingZones
+          .map(
+            (z) => `
+          <div class="flex justify-between items-center py-1 px-2 bg-orange-500/10 rounded">
+            <span class="text-orange-300">${z.id} <span class="text-xs text-muted-foreground">(${z.spoof_type})</span></span>
+            <span class="text-muted-foreground">r=${z.radius}m @ (${z.center.map((c) => c.toFixed(0)).join(", ")})</span>
+          </div>
+        `,
+          )
+          .join("");
+      } else {
+        spoofingEl.innerHTML =
+          '<div class="text-muted-foreground/60 italic">None</div>';
       }
     }
   },
@@ -631,6 +674,10 @@ const App = {
       if (data.zones && Array.isArray(data.zones)) {
         if (window.Scene3D) {
           Scene3D.updateAllSpoofingZones(data.zones);
+        }
+        // Render phantom agents from spoofing zone data
+        if (data.phantom_agents && window.Scene3D) {
+          Scene3D.updatePhantomAgents(data.phantom_agents);
         }
         this.updateSpoofingList(data.zones);
         const countEl = document.getElementById("spoofing-count");

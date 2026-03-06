@@ -53,11 +53,11 @@ class LLMAgent:
         self.model = LLM_MODEL
         self.api_url = SIMULATION_API_URL
 
-    async def answer(self, user_query: str) -> str:
+    async def answer(self, user_query: str) -> dict:
         """
         Process a user message with tool calling loop.
 
-        Returns the final text response after any tool calls are resolved.
+        Returns a dict with 'response' (text) and 'tool_calls' (list).
         """
         print(f"\n{'='*60}")
         print(f"[LLM] Processing: {user_query}")
@@ -127,7 +127,7 @@ class LLMAgent:
         print(f"[LLM] Answer ready ({len(answer)} chars)")
         print(f"{'='*60}\n")
 
-        return answer
+        return {"response": answer, "tool_calls": tool_calls_made}
 
     def _parse_tool_call(self, content: str) -> Optional[dict]:
         """
@@ -181,6 +181,6 @@ def get_agent() -> LLMAgent:
     return _agent
 
 
-async def answer_question(query: str) -> str:
+async def answer_question(query: str) -> dict:
     agent = get_agent()
     return await agent.answer(query)

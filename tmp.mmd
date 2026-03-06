@@ -1,0 +1,101 @@
+flowchart TD
+    SWARM["🚁 Swarm in Flight\n(7 agents navigating to destination)"]
+
+    subgraph THREATS["Threat Layer"]
+        direction TB
+        JAM["⚡ Jamming Zone\n(low_jam / high_jam / physical)"]
+        PHANTOM["👻 Phantom Injection\nFake GLOBAL_POSITION_INT\nmessages broadcast"]
+        FALSIFY["📍 Position Falsification\nReal positions + random\nGaussian offset injected"]
+        COORD["🎯 Coordinate Attack\nUniform shift vector applied\nto all agents in zone"]
+    end
+
+    subgraph MAVLINK["MAVLink Message Bus"]
+        BROADCAST["Agents broadcast\nHEARTBEAT + GLOBAL_POSITION_INT"]
+        INJECT["💉 Spoofing Engine\ninjects spoofed messages"]
+        PACKETLOSS["📉 Packet Loss\n(comm-quality-weighted drop)"]
+        CRYPTO{"🔐 Crypto Auth\nenabled?"}
+        VERIFY["✅ Verify signature\n(HMAC-SHA256 /\nChaCha20 / AES-256-CTR)"]
+        REJECT["❌ Reject unsigned\nor tampered message"]
+        PERCEIVED["Agent builds\nPerceived State"]
+    end
+
+    subgraph EFFECTS_NO_CRYPTO["Effects Without Crypto"]
+        direction TB
+        JAM_EFFECT["φᵢⱼ → 0\nFormation forces distort\nAgents stall / diverge"]
+        PHANTOM_EFFECT["Phantoms treated as real\nSwarm deflects around\nnon-existent agents"]
+        FALSIFY_EFFECT["Wrong neighbor distances\nFormation geometry distorts\nRed offset lines in 3D view"]
+        COORD_EFFECT["All agents shifted uniformly\nFormation looks intact but\nswarm heads to wrong location"]
+    end
+
+    subgraph EFFECTS_CRYPTO["Effects With Crypto ✅"]
+        direction TB
+        JAM_CRYPTO["❗ No change — jamming\nblocks delivery before\nany signature can be checked"]
+        PHANTOM_CRYPTO["Phantom msgs have no\nvalid signature → dropped\nReal agents unaffected"]
+        FALSIFY_CRYPTO["Tampered msgs lose\noriginal signature → dropped\nLast verified position kept"]
+        COORD_CRYPTO["Same as falsification —\nmodified msg rejected\nTrue positions preserved"]
+    end
+
+    subgraph LLM["🤖 LLM Assistance Controller"]
+        MONITOR["Monitor Jn per agent\nevery tick"]
+        THRESHOLD{"Jn < PT\n(0.94)?"}
+        CONTEXT["Gather context:\nposition, zones,\ndestination"]
+        GUIDANCE["Generate tangent\nescape waypoint"]
+        INJECT_WP["Override agent's\nnext waypoint"]
+        RELEASE["Jn recovers → resume\nnormal A* navigation"]
+    end
+
+    SWARM --> THREATS
+    SWARM --> BROADCAST
+
+    JAM --> PACKETLOSS
+    PHANTOM --> INJECT
+    FALSIFY --> INJECT
+    COORD --> INJECT
+
+    BROADCAST --> INJECT
+    INJECT --> PACKETLOSS
+    PACKETLOSS --> CRYPTO
+
+    CRYPTO -- No --> PERCEIVED
+    CRYPTO -- Yes --> VERIFY
+    VERIFY -- Valid --> PERCEIVED
+    VERIFY -- Invalid/Missing --> REJECT
+
+    PERCEIVED --> JAM_EFFECT
+    PERCEIVED --> PHANTOM_EFFECT
+    PERCEIVED --> FALSIFY_EFFECT
+    PERCEIVED --> COORD_EFFECT
+
+    JAM --> JAM_CRYPTO
+    PHANTOM --> PHANTOM_CRYPTO
+    FALSIFY --> FALSIFY_CRYPTO
+    COORD --> COORD_CRYPTO
+
+    JAM_EFFECT --> MONITOR
+    PHANTOM_EFFECT --> MONITOR
+    FALSIFY_EFFECT --> MONITOR
+    COORD_EFFECT --> MONITOR
+
+    JAM_CRYPTO --> MONITOR
+    PHANTOM_CRYPTO --> MONITOR
+
+    MONITOR --> THRESHOLD
+    THRESHOLD -- No --> MONITOR
+    THRESHOLD -- Yes --> CONTEXT
+    CONTEXT --> GUIDANCE
+    GUIDANCE --> INJECT_WP
+    INJECT_WP --> RELEASE
+    RELEASE --> MONITOR
+
+    classDef threat fill:#7f1d1d,stroke:#ef4444,color:#fff
+    classDef crypto fill:#14532d,stroke:#22c55e,color:#fff
+    classDef llm fill:#1e1b4b,stroke:#818cf8,color:#fff
+    classDef effect fill:#1c1917,stroke:#78716c,color:#d4d4d4
+    classDef bus fill:#0c1a2e,stroke:#3b82f6,color:#fff
+
+    class JAM,PHANTOM,FALSIFY,COORD threat
+    class VERIFY,REJECT,PHANTOM_CRYPTO,FALSIFY_CRYPTO,COORD_CRYPTO crypto
+    class MONITOR,THRESHOLD,CONTEXT,GUIDANCE,INJECT_WP,RELEASE llm
+    class JAM_EFFECT,PHANTOM_EFFECT,FALSIFY_EFFECT,COORD_EFFECT,JAM_CRYPTO effect
+    class BROADCAST,INJECT,PACKETLOSS,CRYPTO,PERCEIVED bus
+```

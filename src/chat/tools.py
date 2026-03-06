@@ -87,6 +87,72 @@ TOOL_SCHEMAS = [
         "parameters": {},
         "required": [],
     },
+    {
+        "name": "delete_spoofing_zone",
+        "description": "Remove a spoofing attack zone by ID. Use when the user wants to deactivate or clear a specific spoofing zone.",
+        "parameters": {
+            "zone_id": {"type": "string", "description": "Zone ID e.g. 'zone_1'"},
+        },
+        "required": ["zone_id"],
+    },
+    {
+        "name": "add_jamming_zone",
+        "description": "Create a jamming zone that degrades agent communication quality. Types: 'physical' (impenetrable obstacle), 'low_jam' (mild communication interference), 'high_jam' (severe jamming that nearly disables comms).",
+        "parameters": {
+            "x": {"type": "number", "description": "Center X coordinate"},
+            "y": {"type": "number", "description": "Center Y coordinate"},
+            "z": {"type": "number", "description": "Center Z coordinate", "default": 10},
+            "radius": {"type": "number", "description": "Zone radius", "default": 15},
+            "jam_type": {"type": "string", "description": "'physical', 'low_jam', or 'high_jam'", "default": "low_jam"},
+        },
+        "required": ["x", "y"],
+    },
+    {
+        "name": "delete_jamming_zone",
+        "description": "Remove a jamming/obstacle zone by ID.",
+        "parameters": {
+            "zone_id": {"type": "string", "description": "Zone ID e.g. 'obstacle_1'"},
+        },
+        "required": ["zone_id"],
+    },
+    {
+        "name": "start_simulation",
+        "description": "Start the autonomous simulation. Vehicles navigate toward the mission destination using the specified formation and path algorithm.",
+        "parameters": {
+            "formation": {"type": "string", "description": "Formation type: 'communication_aware', 'v_formation', 'line', 'circle', 'wedge', 'column', 'diamond'", "default": "communication_aware"},
+            "path_algorithm": {"type": "string", "description": "Path algorithm: 'astar', 'direct', 'theta_star', 'dijkstra', 'bfs', 'greedy'", "default": "astar"},
+        },
+        "required": [],
+    },
+    {
+        "name": "stop_simulation",
+        "description": "Stop the running simulation. All vehicles freeze in their current positions.",
+        "parameters": {},
+        "required": [],
+    },
+    {
+        "name": "reset_simulation",
+        "description": "Reset simulation to initial state. Agents return to starting positions, spoofing zones are cleared, and MAVLink/crypto state is reset.",
+        "parameters": {},
+        "required": [],
+    },
+    {
+        "name": "set_formation",
+        "description": "Change the swarm formation type. Can be applied while simulation is running.",
+        "parameters": {
+            "formation": {"type": "string", "description": "Formation type: 'communication_aware', 'v_formation', 'line', 'circle', 'wedge', 'column', 'diamond'"},
+        },
+        "required": ["formation"],
+    },
+    {
+        "name": "get_telemetry_history",
+        "description": "Get recent position and state history for an agent from the telemetry database. Useful for tracking trajectory, checking when an agent was jammed, or analyzing movement patterns.",
+        "parameters": {
+            "agent_id": {"type": "string", "description": "Agent ID e.g. 'agent1'"},
+            "limit": {"type": "integer", "description": "Number of history entries to return (default 10)", "default": 10},
+        },
+        "required": ["agent_id"],
+    },
 ]
 
 
@@ -258,6 +324,139 @@ async def get_protocol_stats() -> dict[str, Any]:
             return {"success": False, "error": str(e)}
 
 
+async def delete_spoofing_zone(zone_id: str) -> dict[str, Any]:
+    """Remove a spoofing zone by ID."""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.delete(
+                f"{SIMULATION_API_URL}/spoofing_zones/{zone_id}", timeout=5.0
+            )
+            if response.status_code == 200:
+                return {"success": True, "message": f"Deleted spoofing zone {zone_id}"}
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+async def add_jamming_zone(
+    x: float, y: float, z: float = 10.0, radius: float = 15.0, jam_type: str = "low_jam"
+) -> dict[str, Any]:
+    """Create a jamming zone."""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{SIMULATION_API_URL}/jamming_zones",
+                json={"center": [x, y, z], "radius": radius, "obstacle_type": jam_type},
+                timeout=5.0,
+            )
+            if response.status_code == 200:
+                result = response.json()
+                return {
+                    "success": True,
+                    "message": f"Created {jam_type} jamming zone at ({x}, {y}, {z}) r={radius}",
+                    "zone_id": result.get("zone", {}).get("id"),
+                }
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+async def delete_jamming_zone(zone_id: str) -> dict[str, Any]:
+    """Remove a jamming zone by ID."""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.delete(
+                f"{SIMULATION_API_URL}/jamming_zones/{zone_id}", timeout=5.0
+            )
+            if response.status_code == 200:
+                return {"success": True, "message": f"Deleted jamming zone {zone_id}"}
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+async def start_simulation(
+    formation: str = "communication_aware", path_algorithm: str = "astar"
+) -> dict[str, Any]:
+    """Start the autonomous simulation."""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{SIMULATION_API_URL}/simulation/start",
+                json={"formation": formation, "path_algorithm": path_algorithm},
+                timeout=10.0,
+            )
+            if response.status_code == 200:
+                result = response.json()
+                return {
+                    "success": True,
+                    "message": result.get("message", "Simulation started"),
+                    "config": result.get("config"),
+                }
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+async def stop_simulation() -> dict[str, Any]:
+    """Stop the running simulation."""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{SIMULATION_API_URL}/simulation/stop", timeout=5.0
+            )
+            if response.status_code == 200:
+                return {"success": True, "message": "Simulation stopped"}
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+async def reset_simulation() -> dict[str, Any]:
+    """Reset simulation to initial state."""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{SIMULATION_API_URL}/simulation/reset", timeout=5.0
+            )
+            if response.status_code == 200:
+                return {"success": True, "message": "Simulation reset to initial state"}
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+async def set_formation(formation: str) -> dict[str, Any]:
+    """Change swarm formation type."""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{SIMULATION_API_URL}/simulation/algorithm",
+                json={"formation": formation},
+                timeout=5.0,
+            )
+            if response.status_code == 200:
+                return {"success": True, "message": f"Formation changed to {formation}"}
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+async def get_telemetry_history(agent_id: str, limit: int = 10) -> dict[str, Any]:
+    """Get recent telemetry history for an agent from the database."""
+    try:
+        from ..rag import get_telemetry_history as _get_history
+        history = _get_history(agent_id, limit=limit)
+        return {
+            "success": True,
+            "agent_id": agent_id,
+            "count": len(history),
+            "history": history,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 TOOL_EXECUTORS = {
     "move_agent": move_agent,
     "get_agent_status": get_agent_status,
@@ -265,6 +464,14 @@ TOOL_EXECUTORS = {
     "add_agent": add_agent,
     "remove_agent": remove_agent,
     "add_spoofing_zone": add_spoofing_zone,
+    "delete_spoofing_zone": delete_spoofing_zone,
+    "add_jamming_zone": add_jamming_zone,
+    "delete_jamming_zone": delete_jamming_zone,
     "toggle_crypto_auth": toggle_crypto_auth,
     "get_protocol_stats": get_protocol_stats,
+    "start_simulation": start_simulation,
+    "stop_simulation": stop_simulation,
+    "reset_simulation": reset_simulation,
+    "set_formation": set_formation,
+    "get_telemetry_history": get_telemetry_history,
 }

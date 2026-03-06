@@ -225,8 +225,17 @@ class SpoofingEngine:
             if not zone.active or zone.spoof_type != SpoofType.PHANTOM:
                 continue
             zone_id = zone.id
-            if zone_id not in self._phantom_cache:
-                continue
+            # Auto-populate cache if not yet initialized (before simulation starts)
+            if zone_id not in self._phantom_cache or len(self._phantom_cache[zone_id]) != zone.phantom_count:
+                self._phantom_cache[zone_id] = []
+                for i in range(zone.phantom_count):
+                    angle = 2 * math.pi * i / zone.phantom_count
+                    r = zone.radius * 0.6
+                    self._phantom_cache[zone_id].append({
+                        "base_angle": angle,
+                        "base_r": r,
+                        "z_offset": random.uniform(-2, 2),
+                    })
             for i, cache in enumerate(self._phantom_cache[zone_id]):
                 phantom_id = f"phantom_{zone_id}_{i+1}"
                 t = time.time()

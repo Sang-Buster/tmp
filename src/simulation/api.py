@@ -20,14 +20,19 @@ from ..algo.path_planning import PATH_ALGORITHMS
 from ..algo.spoofing import SpoofingZone, SpoofType, get_spoofing_engine, reset_spoofing_engine
 from ..config import (
     CRYPTO_AUTH_ENABLED,
+    DEFAULT_SPOOF_TYPE,
     LLM_ASSISTANCE_ENABLED,
     MAVLINK_ENABLED,
     MISSION_END,
     NUM_AGENTS,
+    PHANTOM_COUNT,
+    POSITION_FALSIFICATION_MAGNITUDE,
+    COORDINATE_ATTACK_VECTOR,
     X_RANGE,
     Y_RANGE,
     Z_RANGE,
     get_initial_obstacles,
+    get_initial_spoofing_zones,
     print_config,
 )
 from .agents import AgentState, init_agents
@@ -127,6 +132,32 @@ async def startup():
     if initial_obstacles:
         print(f"[SIM] Loaded {len(initial_obstacles)} initial obstacles")
 
+    # Initialize spoofing zones from config
+    initial_spoof_zones = get_initial_spoofing_zones()
+    for i, sz in enumerate(initial_spoof_zones):
+        zone_id = f"zone_{i+1}"
+        spoof_type_str = sz[4] if len(sz) > 4 else DEFAULT_SPOOF_TYPE
+        try:
+            spoof_type = SpoofType(spoof_type_str)
+        except ValueError:
+            print(f"[SIM] Unknown spoof type '{spoof_type_str}', defaulting to phantom")
+            spoof_type = SpoofType.PHANTOM
+
+        spoofing_zones[zone_id] = SpoofingZone(
+            id=zone_id,
+            center=[sz[0], sz[1], sz[2] if len(sz) > 2 else 0],
+            radius=sz[3] if len(sz) > 3 else 10.0,
+            active=True,
+            spoof_type=spoof_type,
+            phantom_count=PHANTOM_COUNT,
+            falsification_magnitude=POSITION_FALSIFICATION_MAGNITUDE,
+            coordinate_vector=list(COORDINATE_ATTACK_VECTOR),
+        )
+        print(f"[SIM] Loaded {spoof_type.value} spoofing zone {zone_id}: center=({sz[0]}, {sz[1]}, {sz[2] if len(sz) > 2 else 0}), radius={sz[3] if len(sz) > 3 else 10.0}")
+
+    if initial_spoof_zones:
+        print(f"[SIM] Loaded {len(initial_spoof_zones)} initial spoofing zones")
+
     # Initialize LLM assistance controller with config state
     llm_controller = get_llm_controller()
     llm_controller.set_enabled(llm_assistance_enabled)
@@ -174,7 +205,8 @@ async def get_agents():
 
     # Include phantom agents from MAVLink bus
     bus = get_mavlink_bus()
-    for pid in bus.get_phantom_ids():
+    bus_phantom_ids = bus.get_phantom_ids()
+    for pid in bus_phantom_ids:
         if pid in bus._perceived_positions:
             pos = bus._perceived_positions[pid]
             result[pid] = {
@@ -197,6 +229,33 @@ async def get_agents():
                 "crypto_verified": False,
                 "last_update": datetime.now().isoformat(),
             }
+
+    # Fallback: if bus has no phantoms yet (pre-simulation), use SpoofingEngine
+    if not bus_phantom_ids and spoofing_zones:
+        engine = get_spoofing_engine()
+        phantom_positions = engine.get_phantom_positions(list(spoofing_zones.values()))
+        for pid, pos in phantom_positions.items():
+            if pid not in result:
+                result[pid] = {
+                    "agent_id": pid,
+                    "position": pos,
+                    "velocity": [0, 0, 0],
+                    "heading": 0,
+                    "heading_degrees": 0,
+                    "speed": 0,
+                    "jammed": False,
+                    "communication_quality": 1.0,
+                    "llm_target": None,
+                    "formation_role": None,
+                    "neighbors": [],
+                    "formation_error": 0,
+                    "distance_to_goal": 0,
+                    "eta": None,
+                    "path_points": 0,
+                    "is_phantom": True,
+                    "crypto_verified": False,
+                    "last_update": datetime.now().isoformat(),
+                }
 
     return {
         "agents": result,
@@ -1135,9 +1194,12 @@ async def get_llm_context():
     llm_controller = get_llm_controller()
     zones_list = list(jamming_zones.values())
     
+    spoof_zones_list = list(spoofing_zones.values())
+
     context = llm_controller.get_current_context(
         agents=agent_states,
         jamming_zones=zones_list,
+        spoofing_zones=spoof_zones_list,
     )
     
     context["llm_assistance_enabled"] = llm_assistance_enabled
@@ -1187,8 +1249,14 @@ async def get_visualization_data(trail_length: str = "short"):
 
     # MAVLink / spoofing visualization data
     bus = get_mavlink_bus()
-    vis_data["phantom_agents"] = {pid: pos for pid, pos in bus.get_perceived_positions([]).items()
-                                   if pid.startswith("phantom_")}
+    bus_phantoms = {pid: pos for pid, pos in bus.get_perceived_positions([]).items()
+                    if pid.startswith("phantom_")}
+    # When simulation is idle the MAVLink bus has no perceived positions yet.
+    # Fall back to the spoofing engine's static phantom positions so they are
+    # always visible in the 3D scene regardless of whether the sim is running.
+    vis_data["phantom_agents"] = bus_phantoms or get_spoofing_engine().get_phantom_positions(
+        list(spoofing_zones.values())
+    )
     vis_data["falsification_offsets"] = bus.get_falsification_offsets()
     vis_data["crypto_auth_enabled"] = get_crypto_auth().enabled
     

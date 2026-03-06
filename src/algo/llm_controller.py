@@ -842,13 +842,14 @@ JSON:"""
         """
         return self._log_history[-limit:]
     
-    def get_current_context(self, agents: dict = None, jamming_zones: list = None) -> dict:
+    def get_current_context(self, agents: dict = None, jamming_zones: list = None, spoofing_zones: list = None) -> dict:
         """
         Get the current context data that would be sent to LLM.
         
         Args:
             agents: Current agent states (optional)
             jamming_zones: Current jamming zones (optional)
+            spoofing_zones: Current spoofing zones (optional)
             
         Returns:
             Dict with context information for display
@@ -860,6 +861,7 @@ JSON:"""
             'active_guidance': [],
             'last_prompts': [],
             'jamming_zones': [],
+            'spoofing_zones': [],
         }
         
         # Add agents needing assistance
@@ -899,6 +901,26 @@ JSON:"""
                         'radius': zone.get('radius', 10),
                     })
         
+        # Add spoofing zones info
+        if spoofing_zones:
+            for zone in spoofing_zones:
+                if hasattr(zone, 'center'):
+                    context['spoofing_zones'].append({
+                        'id': zone.id if hasattr(zone, 'id') else 'unknown',
+                        'center': zone.center,
+                        'radius': zone.radius,
+                        'spoof_type': zone.spoof_type.value if hasattr(zone, 'spoof_type') else 'unknown',
+                        'active': zone.active if hasattr(zone, 'active') else True,
+                    })
+                elif isinstance(zone, dict):
+                    context['spoofing_zones'].append({
+                        'id': zone.get('id', 'unknown'),
+                        'center': zone.get('center', [0, 0, 0]),
+                        'radius': zone.get('radius', 10),
+                        'spoof_type': zone.get('spoof_type', 'unknown'),
+                        'active': zone.get('active', True),
+                    })
+
         # Add recent prompts (last 3)
         for entry in self._log_history[-3:]:
             context['last_prompts'].append({

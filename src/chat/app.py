@@ -23,6 +23,10 @@ app = FastAPI(title="Vehicle Simulation Chat")
 # Background task for LLM target processing
 _llm_target_task = None
 
+# Last user chat interaction — shown in the LLM Context panel "Last LLM Prompt" section
+# so users can confirm their message reached the model even before agents are jammed.
+_last_chat_prompt: dict = {}
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -102,6 +106,25 @@ async def startup():
     print("[CHAT] LLM target processing loop started")
 
 
+async def _warmup_model():
+    """Send a minimal request to preload the model into GPU memory."""
+    try:
+        # Use a generous 5-minute timeout: GPU cold-start (model pull to VRAM) can be slow,
+        # especially over an HPC SSH tunnel. Once loaded, keep_alive=-1 keeps it resident.
+        response = await async_chat_with_retry(
+            LLM_MODEL,
+            messages=[{"role": "user", "content": "hi"}],
+            max_retries=1,
+            timeout_secs=300,
+        )
+        if response:
+            print("[CHAT] Model preloaded into GPU")
+        else:
+            print("[CHAT] Model preload failed - will load on first request")
+    except Exception:
+        print("[CHAT] Model preload failed - will load on first request")
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Serve main dashboard HTML."""
@@ -149,6 +172,7 @@ async def chat(request: Request):
     Simple move commands ("move agent1 to 5,5") are also handled via a fast regex
     path that skips the LLM for responsiveness.
     """
+    global _last_chat_prompt
     try:
         data = await request.json()
         user_message = data.get("message", "").strip()
@@ -164,9 +188,17 @@ async def chat(request: Request):
             return {"response": result}
 
         # MCP tool-calling LLM agent handles everything else
-        response = await answer_question(user_message)
+        result = await answer_question(user_message)
 
-        return {"response": response}
+        # Record for LLM Context panel so users can confirm the message reached the model
+        _last_chat_prompt = {
+            "agent_id": "user-chat",
+            "timestamp": datetime.now().isoformat(),
+            "prompt_preview": user_message[:300],
+            "reasoning": (result.get("response") or "")[:300],
+        }
+
+        return result
 
     except Exception as e:
         print(f"[CHAT] Error: {e}")
@@ -176,11 +208,13 @@ async def chat(request: Request):
 
 
 def _is_move_command(message: str) -> bool:
-    """Check if message is a move command."""
+    """Check if message is a simple move command with coordinates."""
     msg = message.lower()
-    # Check for move-related keywords
-    move_keywords = ["move", "send", "relocate", "position", "go to", "navigate"]
-    return any(kw in msg for kw in move_keywords) and ("agent" in msg or "vehicle" in msg)
+    move_keywords = ["move", "send", "relocate", "go to", "navigate"]
+    has_move_verb = any(kw in msg for kw in move_keywords)
+    has_agent = "agent" in msg or "vehicle" in msg
+    has_target = "to" in msg
+    return has_move_verb and has_agent and has_target
 
 
 async def _handle_move_command(message: str) -> str:
@@ -706,7 +740,16 @@ async def proxy_llm_context():
                 f"{SIMULATION_API_URL}/llm_context",
                 timeout=5.0
             )
-            return response.json()
+            data = response.json()
+
+            # Inject the last user chat interaction so the "Last LLM Prompt" panel
+            # is populated even when no agents are being autonomously assisted.
+            if _last_chat_prompt:
+                prompts = data.get("last_prompts") or []
+                prompts.append(_last_chat_prompt)
+                data["last_prompts"] = prompts
+
+            return data
     except Exception as e:
         return {"error": str(e)}
 

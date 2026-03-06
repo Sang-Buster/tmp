@@ -119,11 +119,17 @@ const Chat = {
     this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 min — allows for model cold-start on HPC
+
       const response = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       // Remove thinking indicator
       const thinking = document.getElementById("chat-thinking");
@@ -141,7 +147,11 @@ const Chat = {
     } catch (error) {
       const thinking = document.getElementById("chat-thinking");
       if (thinking) thinking.remove();
-      this.addMessage("system", `Error: ${error.message}`);
+      if (error.name === "AbortError") {
+        this.addMessage("system", "Request timed out after 5 minutes. The LLM model may still be loading on the GPU — please try again.");
+      } else {
+        this.addMessage("system", `Error: ${error.message}`);
+      }
     } finally {
       this.input.disabled = false;
       this.sendButton.disabled = false;

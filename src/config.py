@@ -9,10 +9,15 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load .env file if it exists
+# Load .env file, fall back to .env.example if .env is missing
 env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
     load_dotenv(env_path)
+else:
+    example_path = Path(__file__).parent.parent / ".env.example"
+    if example_path.exists():
+        load_dotenv(example_path)
+        print("[Config] No .env found — using .env.example defaults. Copy it to .env and set OLLAMA_HOST for your setup.")
 
 # =============================================================================
 # OLLAMA / LLM CONFIGURATION
@@ -20,8 +25,19 @@ if env_path.exists():
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 LLM_MODEL = os.getenv("LLM_MODEL", "llama3.2:3b-instruct-q4_K_M")
-LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "30"))
+LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "120"))
 LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))
+
+# Keep model loaded in GPU memory.
+# -1 = never unload (recommended for HPC/tunneled setups)
+# 0  = unload immediately after request
+# Positive int = seconds to keep loaded
+# String with unit = e.g. "30m", "1h"
+_keep_alive_raw = os.getenv("LLM_KEEP_ALIVE", "-1")
+try:
+    LLM_KEEP_ALIVE: int | str = int(_keep_alive_raw)
+except ValueError:
+    LLM_KEEP_ALIVE = _keep_alive_raw  # e.g. "30m", "1h"
 
 # LLM Assistance - auto-assists when agent comm quality drops below PT
 # Set to "false" to disable by default
@@ -169,6 +185,9 @@ POSITION_FALSIFICATION_MAGNITUDE = float(os.getenv("POSITION_FALSIFICATION_MAGNI
 # Coordinate attack: systematic shift vector [x, y, z]
 COORDINATE_ATTACK_VECTOR = json.loads(os.getenv("COORDINATE_ATTACK_VECTOR", "[10.0, 10.0, 0.0]"))
 
+# Manual spoofing zones (JSON array of [x, y, z, radius, spoof_type])
+SPOOFING_ZONES_MANUAL = os.getenv("SPOOFING_ZONES_MANUAL", "")
+
 # =============================================================================
 # CRYPTOGRAPHIC AUTHENTICATION CONFIGURATION
 # =============================================================================
@@ -267,6 +286,34 @@ def get_initial_obstacles() -> list[tuple]:
     return obstacles
 
 
+def get_initial_spoofing_zones() -> list[tuple]:
+    """
+    Get initial spoofing zones based on configuration.
+    
+    Supports two formats:
+    - 4-parameter: [x, y, z, radius] - defaults to DEFAULT_SPOOF_TYPE
+    - 5-parameter: [x, y, z, radius, spoof_type]
+    
+    Returns:
+        List of (x, y, z, radius, spoof_type) tuples
+    """
+    if SPOOFING_ZONES_MANUAL:
+        try:
+            zones = json.loads(SPOOFING_ZONES_MANUAL)
+            result = []
+            for z in zones:
+                if len(z) == 4:
+                    result.append((z[0], z[1], z[2], z[3], DEFAULT_SPOOF_TYPE))
+                elif len(z) >= 5:
+                    result.append((z[0], z[1], z[2], z[3], z[4]))
+                else:
+                    print(f"[Config] Invalid spoofing zone format: {z}")
+            return result
+        except json.JSONDecodeError as e:
+            print(f"[Config] Failed to parse SPOOFING_ZONES_MANUAL: {e}")
+    return []
+
+
 def get_formation_params() -> dict:
     """Get formation control parameters."""
     return {
@@ -324,10 +371,12 @@ def test_ollama_connection(verbose: bool = True) -> bool:
         return False
 
 
-async def async_chat_with_retry(model: str, messages: list, max_retries: int = LLM_MAX_RETRIES) -> dict | None:
+async def async_chat_with_retry(model: str, messages: list, max_retries: int = LLM_MAX_RETRIES, timeout_secs: float | None = None) -> dict | None:
     """
     Async Ollama chat call via httpx - non-blocking, safe to call from FastAPI endpoints.
     Uses the Ollama REST API directly so the event loop is never blocked.
+
+    timeout_secs overrides LLM_TIMEOUT for this call (useful for warmup with a longer budget).
     """
     import asyncio
     import httpx
@@ -337,10 +386,12 @@ async def async_chat_with_retry(model: str, messages: list, max_retries: int = L
         "model": model,
         "messages": messages,
         "stream": False,
+        "keep_alive": LLM_KEEP_ALIVE,
     }
 
-    # Use a generous read timeout: connect fast, allow LLM plenty of time to respond
-    timeout = httpx.Timeout(connect=5.0, read=float(LLM_TIMEOUT), write=10.0, pool=5.0)
+    # Allow per-call timeout override (e.g. warmup needs longer budget than a chat request)
+    read_timeout = float(timeout_secs) if timeout_secs is not None else float(LLM_TIMEOUT)
+    timeout = httpx.Timeout(connect=5.0, read=read_timeout, write=10.0, pool=5.0)
 
     for attempt in range(max_retries):
         try:
@@ -377,6 +428,7 @@ def chat_with_retry(client, model: str, messages: list, max_retries: int = LLM_M
         "messages": messages,
         "stream": False,
         "options": {"num_predict": 512},
+        "keep_alive": LLM_KEEP_ALIVE,
     }
 
     for attempt in range(max_retries):
