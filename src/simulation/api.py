@@ -18,6 +18,7 @@ from ..algo.llm_controller import get_llm_controller
 from ..algo.mavlink import get_mavlink_bus, reset_mavlink_bus
 from ..algo.path_planning import PATH_ALGORITHMS
 from ..algo.spoofing import SpoofingZone, SpoofType, get_spoofing_engine, reset_spoofing_engine
+from ..algo.v2v_channel import reset_channel_model
 from ..config import (
     CRYPTO_AUTH_ENABLED,
     DEFAULT_SPOOF_TYPE,
@@ -905,6 +906,66 @@ async def set_crypto_auth_state(data: dict[str, Any]):
     }
 
 
+@app.get("/simulation/v2v_channel")
+async def get_v2v_channel_state():
+    """Get V2V channel model status and link state details."""
+    from ..algo.v2v_channel import get_channel_model
+    ctrl = get_controller()
+    model = get_channel_model()
+    link_states = model.get_link_states()
+
+    links_summary = []
+    for (i, j), ls in link_states.items():
+        links_summary.append({
+            "pair": [i, j],
+            "link_type": ls.link_type.value,
+            "path_loss_db": round(ls.path_loss_db, 1),
+            "shadow_fading_db": round(ls.shadow_fading_db, 1),
+            "snr_db": round(ls.snr_db, 1),
+            "quality": round(ls.quality, 4),
+        })
+
+    return {
+        "enabled": ctrl.use_v2v_channel,
+        "link_count": len(links_summary),
+        "links": links_summary,
+        "params": {
+            "tx_power": model.params.tx_power,
+            "freq_ghz": model.params.freq_ghz,
+            "n_los": model.params.n_los,
+            "n_nlosv": model.params.n_nlosv,
+            "n_nloso": model.params.n_nloso,
+            "vehicle_loss_db": model.params.vehicle_loss_db,
+            "shadow_fading": model.params.enable_shadow_fading,
+            "small_scale_fading": model.params.enable_small_scale_fading,
+        },
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.post("/simulation/v2v_channel")
+async def set_v2v_channel_state(data: dict[str, Any]):
+    """Toggle V2V channel model and/or update parameters."""
+    ctrl = get_controller()
+    from ..algo.v2v_channel import get_channel_model
+    model = get_channel_model()
+
+    if "enabled" in data:
+        ctrl.use_v2v_channel = bool(data["enabled"])
+
+    if "params" in data:
+        p = data["params"]
+        for key, val in p.items():
+            if hasattr(model.params, key):
+                setattr(model.params, key, type(getattr(model.params, key))(val))
+
+    return {
+        "success": True,
+        "enabled": ctrl.use_v2v_channel,
+        "message": f"V2V channel model {'enabled' if ctrl.use_v2v_channel else 'disabled'}",
+    }
+
+
 @app.get("/protocol_stats")
 async def get_protocol_stats():
     """Get MAVLink protocol statistics."""
@@ -1079,7 +1140,7 @@ async def stop_simulation():
 
 @app.post("/simulation/reset")
 async def reset_simulation():
-    """Reset simulation to initial state."""
+    """Reset simulation to initial state, reloading zones from config."""
     global simulation_running, agent_states
 
     simulation_running = False
@@ -1091,13 +1152,54 @@ async def reset_simulation():
     # Reset controller
     reset_controller()
 
-    # Reset MAVLink, spoofing, crypto
+    # Reset MAVLink, spoofing, crypto, channel model
     reset_mavlink_bus()
     reset_spoofing_engine()
     reset_crypto_auth()
-    spoofing_zones.clear()
+    reset_channel_model()
 
-    print("[SIM API] Simulation reset")
+    # Reload jamming zones from config
+    jamming_zones.clear()
+    initial_obstacles = get_initial_obstacles()
+    for i, obs in enumerate(initial_obstacles):
+        zone_id = f"obstacle_{i+1}"
+        type_str = obs[4] if len(obs) > 4 else "low_jam"
+        try:
+            obstacle_type = ObstacleType(type_str)
+        except ValueError:
+            obstacle_type = ObstacleType.LOW_JAM
+        jamming_zones[zone_id] = JammingZone(
+            id=zone_id,
+            center=[obs[0], obs[1], obs[2] if len(obs) > 2 else 0],
+            radius=obs[3] if len(obs) > 3 else 5.0,
+            intensity=1.0,
+            active=True,
+            obstacle_type=obstacle_type,
+        )
+    _update_agent_jamming_status()
+
+    # Reload spoofing zones from config
+    spoofing_zones.clear()
+    initial_spoof_zones = get_initial_spoofing_zones()
+    for i, sz in enumerate(initial_spoof_zones):
+        zone_id = f"zone_{i+1}"
+        spoof_type_str = sz[4] if len(sz) > 4 else DEFAULT_SPOOF_TYPE
+        try:
+            spoof_type = SpoofType(spoof_type_str)
+        except ValueError:
+            spoof_type = SpoofType.PHANTOM
+        spoofing_zones[zone_id] = SpoofingZone(
+            id=zone_id,
+            center=[sz[0], sz[1], sz[2] if len(sz) > 2 else 0],
+            radius=sz[3] if len(sz) > 3 else 10.0,
+            active=True,
+            spoof_type=spoof_type,
+            phantom_count=PHANTOM_COUNT,
+            falsification_magnitude=POSITION_FALSIFICATION_MAGNITUDE,
+            coordinate_vector=list(COORDINATE_ATTACK_VECTOR),
+        )
+
+    print(f"[SIM API] Simulation reset (reloaded {len(jamming_zones)} jamming + {len(spoofing_zones)} spoofing zones)")
 
     return {"success": True, "message": "Simulation reset"}
 

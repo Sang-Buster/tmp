@@ -627,6 +627,36 @@ async def proxy_simulation_algorithm(request: Request):
         return {"success": False, "error": str(e)}
 
 
+@app.get("/simulation/v2v_channel")
+async def proxy_v2v_channel_get():
+    """Get V2V channel model status."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{SIMULATION_API_URL}/simulation/v2v_channel",
+                timeout=5.0
+            )
+            return response.json()
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/simulation/v2v_channel")
+async def proxy_v2v_channel_post(request: Request):
+    """Toggle V2V channel model."""
+    try:
+        data = await request.json()
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{SIMULATION_API_URL}/simulation/v2v_channel",
+                json=data,
+                timeout=5.0
+            )
+            return response.json()
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.post("/simulation/start")
 async def proxy_simulation_start(request: Request):
     """Start simulation."""

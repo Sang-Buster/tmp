@@ -128,6 +128,25 @@ const App = {
       );
     }
 
+    const commModelSelect = document.getElementById("comm-model-select");
+    if (commModelSelect) {
+      commModelSelect.addEventListener("change", async (e) => {
+        const enabled = e.target.value === "v2v_channel";
+        try {
+          await fetch("/simulation/v2v_channel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled }),
+          });
+          console.log(`[App] Comm model: ${e.target.value} (v2v=${enabled})`);
+          const statusEl = document.getElementById("v2v-status");
+          if (statusEl) statusEl.classList.toggle("hidden", !enabled);
+        } catch (err) {
+          console.error("[App] Failed to toggle V2V channel:", err);
+        }
+      });
+    }
+
   },
 
   /**
@@ -299,6 +318,24 @@ const App = {
       // Store discovered obstacles for mini-map
       if (window.MiniMap && data.discovered_obstacles) {
         MiniMap.setDiscoveredObstacles(data.discovered_obstacles);
+      }
+
+      // Update V2V channel link type stats in the algorithm panel
+      if (data.communication_links) {
+        const statusEl = document.getElementById("v2v-status");
+        const commSelect = document.getElementById("comm-model-select");
+        if (statusEl && commSelect && commSelect.value === "v2v_channel") {
+          let los = 0, nlos = 0;
+          for (const link of data.communication_links) {
+            if (link.link_type === "los") los++;
+            else if (link.link_type) nlos++;
+          }
+          statusEl.classList.remove("hidden");
+          const losEl = document.getElementById("v2v-los-count");
+          const nlosEl = document.getElementById("v2v-nlos-count");
+          if (losEl) losEl.textContent = los;
+          if (nlosEl) nlosEl.textContent = nlos;
+        }
       }
     } catch (error) {
       // Visualization endpoint might not be available yet
@@ -1226,6 +1263,18 @@ async function startSimulation() {
   const pathAlgo = document.getElementById("path-algo-select").value;
   const cryptoEnabled = document.getElementById("crypto-toggle")?.dataset?.enabled === "true";
   const cryptoAlgo = document.getElementById("crypto-algo-select")?.value || "hmac_sha256";
+  const commModel = document.getElementById("comm-model-select")?.value || "v2v_channel";
+
+  // Apply comm model setting before starting
+  try {
+    await fetch("/simulation/v2v_channel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: commModel === "v2v_channel" }),
+    });
+  } catch (e) {
+    console.warn("[App] Could not set V2V channel state:", e);
+  }
 
   try {
     const response = await fetch("/simulation/start", {

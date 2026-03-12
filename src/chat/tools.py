@@ -89,9 +89,9 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "delete_spoofing_zone",
-        "description": "Remove a spoofing attack zone by ID. Use when the user wants to deactivate or clear a specific spoofing zone.",
+        "description": "Remove a spoofing attack zone by ID. IMPORTANT: Call list_spoofing_zones first to get the correct zone ID.",
         "parameters": {
-            "zone_id": {"type": "string", "description": "Zone ID e.g. 'zone_1'"},
+            "zone_id": {"type": "string", "description": "Zone ID (get from list_spoofing_zones)"},
         },
         "required": ["zone_id"],
     },
@@ -109,11 +109,35 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "delete_jamming_zone",
-        "description": "Remove a jamming/obstacle zone by ID.",
+        "description": "Remove a jamming/obstacle zone by ID. IMPORTANT: Call list_jamming_zones first to get the correct zone ID.",
         "parameters": {
-            "zone_id": {"type": "string", "description": "Zone ID e.g. 'obstacle_1'"},
+            "zone_id": {"type": "string", "description": "Zone ID (get from list_jamming_zones)"},
         },
         "required": ["zone_id"],
+    },
+    {
+        "name": "list_jamming_zones",
+        "description": "List all active jamming zones with their IDs, positions, radii, and types. Use this to find zone IDs before deleting.",
+        "parameters": {},
+        "required": [],
+    },
+    {
+        "name": "list_spoofing_zones",
+        "description": "List all active spoofing zones with their IDs, positions, radii, and types. Use this to find zone IDs before deleting.",
+        "parameters": {},
+        "required": [],
+    },
+    {
+        "name": "clear_all_jamming_zones",
+        "description": "Remove ALL jamming zones at once. Use when the user wants to clear or remove all jamming zones.",
+        "parameters": {},
+        "required": [],
+    },
+    {
+        "name": "clear_all_spoofing_zones",
+        "description": "Remove ALL spoofing zones at once. Use when the user wants to clear or remove all spoofing zones.",
+        "parameters": {},
+        "required": [],
     },
     {
         "name": "start_simulation",
@@ -153,6 +177,20 @@ TOOL_SCHEMAS = [
         },
         "required": ["agent_id"],
     },
+    {
+        "name": "toggle_v2v_channel",
+        "description": "Enable or disable the realistic V2V channel model (LOS/NLOS propagation, path loss, fading). When disabled, uses legacy distance-only communication model.",
+        "parameters": {
+            "enabled": {"type": "boolean", "description": "True to enable realistic V2V channel, False for legacy model"},
+        },
+        "required": ["enabled"],
+    },
+    {
+        "name": "get_v2v_channel_status",
+        "description": "Get V2V channel model status including per-link LOS/NLOS classification, path loss, SNR, and quality.",
+        "parameters": {},
+        "required": [],
+    },
 ]
 
 
@@ -173,12 +211,40 @@ def get_tool_schemas_text() -> str:
 # TOOL EXECUTION
 # ============================================================================
 
+def _coerce_tool_args(name: str, args: dict) -> dict:
+    """Coerce LLM-provided argument types to match tool signatures."""
+    schema = next((s for s in TOOL_SCHEMAS if s["name"] == name), None)
+    if not schema:
+        return args
+
+    coerced = {}
+    params = schema.get("parameters", {})
+    for key, value in args.items():
+        param_info = params.get(key)
+        if param_info and value is not None:
+            expected_type = param_info.get("type")
+            try:
+                if expected_type == "number" and not isinstance(value, (int, float)):
+                    value = float(value)
+                elif expected_type == "integer" and not isinstance(value, int):
+                    value = int(float(value))
+                elif expected_type == "boolean" and not isinstance(value, bool):
+                    value = str(value).lower() in ("true", "1", "yes")
+                elif expected_type == "string" and not isinstance(value, str):
+                    value = str(value)
+            except (ValueError, TypeError):
+                pass
+        coerced[key] = value
+    return coerced
+
+
 async def execute_tool(name: str, args: dict) -> dict[str, Any]:
     """Execute a tool by name with the given arguments."""
     executor = TOOL_EXECUTORS.get(name)
     if not executor:
         return {"success": False, "error": f"Unknown tool: {name}"}
     try:
+        args = _coerce_tool_args(name, args)
         return await executor(**args)
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -375,6 +441,78 @@ async def delete_jamming_zone(zone_id: str) -> dict[str, Any]:
             return {"success": False, "error": str(e)}
 
 
+async def list_jamming_zones() -> dict[str, Any]:
+    """List all jamming zones."""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(f"{SIMULATION_API_URL}/jamming_zones", timeout=5.0)
+            if response.status_code == 200:
+                data = response.json()
+                zones = data.get("zones", [])
+                summary = []
+                for z in zones:
+                    summary.append({
+                        "id": z.get("id"),
+                        "center": z.get("center"),
+                        "radius": z.get("radius"),
+                        "type": z.get("obstacle_type"),
+                        "active": z.get("active"),
+                    })
+                return {"success": True, "count": len(zones), "zones": summary}
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+async def list_spoofing_zones() -> dict[str, Any]:
+    """List all spoofing zones."""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(f"{SIMULATION_API_URL}/spoofing_zones", timeout=5.0)
+            if response.status_code == 200:
+                data = response.json()
+                zones = data.get("zones", [])
+                summary = []
+                for z in zones:
+                    summary.append({
+                        "id": z.get("id"),
+                        "center": z.get("center"),
+                        "radius": z.get("radius"),
+                        "type": z.get("spoof_type"),
+                        "active": z.get("active"),
+                    })
+                return {"success": True, "count": len(zones), "zones": summary}
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+async def clear_all_jamming_zones() -> dict[str, Any]:
+    """Remove all jamming zones."""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.delete(f"{SIMULATION_API_URL}/jamming_zones", timeout=5.0)
+            if response.status_code == 200:
+                result = response.json()
+                return {"success": True, "message": result.get("message", "All jamming zones cleared")}
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+async def clear_all_spoofing_zones() -> dict[str, Any]:
+    """Remove all spoofing zones."""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.delete(f"{SIMULATION_API_URL}/spoofing_zones", timeout=5.0)
+            if response.status_code == 200:
+                result = response.json()
+                return {"success": True, "message": result.get("message", "All spoofing zones cleared")}
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
 async def start_simulation(
     formation: str = "communication_aware", path_algorithm: str = "astar"
 ) -> dict[str, Any]:
@@ -457,6 +595,37 @@ async def get_telemetry_history(agent_id: str, limit: int = 10) -> dict[str, Any
         return {"success": False, "error": str(e)}
 
 
+async def toggle_v2v_channel(enabled: bool) -> dict[str, Any]:
+    """Enable or disable the V2V channel model."""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{SIMULATION_API_URL}/simulation/v2v_channel",
+                json={"enabled": enabled},
+                timeout=5.0,
+            )
+            if response.status_code == 200:
+                result = response.json()
+                return {"success": True, "message": result.get("message", "V2V channel toggled")}
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
+async def get_v2v_channel_status() -> dict[str, Any]:
+    """Get V2V channel model status."""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"{SIMULATION_API_URL}/simulation/v2v_channel", timeout=5.0
+            )
+            if response.status_code == 200:
+                return {"success": True, "data": response.json()}
+            return {"success": False, "error": response.text}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+
 TOOL_EXECUTORS = {
     "move_agent": move_agent,
     "get_agent_status": get_agent_status,
@@ -467,6 +636,10 @@ TOOL_EXECUTORS = {
     "delete_spoofing_zone": delete_spoofing_zone,
     "add_jamming_zone": add_jamming_zone,
     "delete_jamming_zone": delete_jamming_zone,
+    "list_jamming_zones": list_jamming_zones,
+    "list_spoofing_zones": list_spoofing_zones,
+    "clear_all_jamming_zones": clear_all_jamming_zones,
+    "clear_all_spoofing_zones": clear_all_spoofing_zones,
     "toggle_crypto_auth": toggle_crypto_auth,
     "get_protocol_stats": get_protocol_stats,
     "start_simulation": start_simulation,
@@ -474,4 +647,6 @@ TOOL_EXECUTORS = {
     "reset_simulation": reset_simulation,
     "set_formation": set_formation,
     "get_telemetry_history": get_telemetry_history,
+    "toggle_v2v_channel": toggle_v2v_channel,
+    "get_v2v_channel_status": get_v2v_channel_status,
 }

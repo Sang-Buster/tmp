@@ -5,9 +5,10 @@ Implements a proper tool calling loop:
   1. User message + tool schemas sent to LLM
   2. LLM decides which tool(s) to call (or answers directly)
   3. Tool results fed back to LLM for final response
-  4. Multi-step reasoning supported (up to 3 tool calls per turn)
+  4. Multi-step reasoning supported (up to 5 tool calls per turn)
 """
 import json
+import re
 from typing import Any, Optional
 
 from ..config import (
@@ -22,7 +23,7 @@ from ..config import (
 from ..rag import add_log, get_logs, get_telemetry_history
 from .tools import TOOL_SCHEMAS, execute_tool, get_tool_schemas_text
 
-MAX_TOOL_ROUNDS = 3
+MAX_TOOL_ROUNDS = 5
 
 SYSTEM_PROMPT = f"""You are an expert assistant for a 3D multi-vehicle swarm simulation.
 
@@ -37,11 +38,17 @@ AVAILABLE TOOLS:
 {get_tool_schemas_text()}
 
 INSTRUCTIONS:
-- To call a tool, respond with EXACTLY one JSON object on its own line:
+- To call a tool, respond with ONLY a JSON object (no extra text):
   {{"tool": "tool_name", "args": {{"param1": value1, "param2": value2}}}}
 - You can call ONE tool per response. After seeing the result, you may call another.
 - If no tool is needed, respond with a direct text answer (2-4 sentences).
-- Be specific with numbers and positions. Format coordinates as (x, y, z).
+- Use numbers (not strings) for numeric parameters: {{"x": 10}} not {{"x": "10"}}.
+
+CRITICAL RULES FOR ZONE OPERATIONS:
+- To DELETE a specific zone: FIRST call list_jamming_zones or list_spoofing_zones to get the zone ID, THEN call delete_jamming_zone or delete_spoofing_zone with that ID.
+- To DELETE ALL zones: call clear_all_jamming_zones or clear_all_spoofing_zones directly.
+- To CREATE a zone: call add_jamming_zone or add_spoofing_zone with x, y coordinates.
+- Zone IDs are auto-generated and look like "zone_a1b2c3d4" for jamming or "zone_1" for spoofing. Never guess IDs -- always list first.
 - When asked about status, ALWAYS call get_agent_status or get_simulation_status first.
 """
 
@@ -131,42 +138,82 @@ class LLMAgent:
 
     def _parse_tool_call(self, content: str) -> Optional[dict]:
         """
-        Try to extract a tool call JSON from the LLM response.
-        Looks for {"tool": "...", "args": {...}} pattern.
+        Extract a tool call JSON from the LLM response.
+
+        Handles common LLM output variations:
+        - Pure JSON response
+        - JSON on a single line amid text
+        - Multi-line JSON object
+        - JSON inside markdown code blocks
+        - Trailing commas and minor formatting issues
         """
-        # Try direct JSON parse
+        text = content.strip()
+
+        # 1) Direct JSON parse of the whole response
+        parsed = self._try_parse_tool_json(text)
+        if parsed:
+            return parsed
+
+        # 2) Extract from markdown code blocks (```json ... ``` or ``` ... ```)
+        code_block_re = re.compile(r"```(?:json)?\s*\n?(.*?)```", re.DOTALL)
+        for match in code_block_re.finditer(text):
+            parsed = self._try_parse_tool_json(match.group(1).strip())
+            if parsed:
+                return parsed
+
+        # 3) Find JSON object spanning multiple lines using brace matching
+        for match in re.finditer(r'\{', text):
+            start = match.start()
+            candidate = self._extract_balanced_braces(text, start)
+            if candidate and "tool" in candidate:
+                parsed = self._try_parse_tool_json(candidate)
+                if parsed:
+                    return parsed
+
+        return None
+
+    @staticmethod
+    def _try_parse_tool_json(text: str) -> Optional[dict]:
+        """Try to parse text as a tool-call JSON, tolerating minor issues."""
+        if not text:
+            return None
+        # Fix trailing commas before closing braces/brackets
+        cleaned = re.sub(r',\s*([}\]])', r'\1', text)
         try:
-            data = json.loads(content.strip())
+            data = json.loads(cleaned)
             if isinstance(data, dict) and "tool" in data:
+                if "args" not in data:
+                    data["args"] = {}
                 return data
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError):
             pass
+        return None
 
-        # Try to find JSON object in the text
-        for line in content.split("\n"):
-            line = line.strip()
-            if line.startswith("{") and "tool" in line:
-                try:
-                    data = json.loads(line)
-                    if isinstance(data, dict) and "tool" in data:
-                        return data
-                except json.JSONDecodeError:
-                    continue
-
-        # Try extracting from code blocks
-        if "```" in content:
-            parts = content.split("```")
-            for i in range(1, len(parts), 2):
-                block = parts[i].strip()
-                if block.startswith("json"):
-                    block = block[4:].strip()
-                try:
-                    data = json.loads(block)
-                    if isinstance(data, dict) and "tool" in data:
-                        return data
-                except json.JSONDecodeError:
-                    continue
-
+    @staticmethod
+    def _extract_balanced_braces(text: str, start: int) -> Optional[str]:
+        """Extract a balanced {...} substring starting at the given index."""
+        depth = 0
+        in_string = False
+        escape_next = False
+        for i in range(start, min(start + 2000, len(text))):
+            ch = text[i]
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == '\\' and in_string:
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    return text[start:i + 1]
         return None
 
 

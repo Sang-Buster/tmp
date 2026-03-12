@@ -638,6 +638,27 @@
                 <option value="bi_astar">Bidirectional A*</option>
               </select>
             </div>
+            <!-- V2V Channel Model -->
+            <div class="space-y-1.5">
+              <label class="text-xs text-muted-foreground">Comm Model</label>
+              <select
+                id="comm-model-select"
+                class="w-full h-9 px-3 text-sm bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="v2v_channel" selected>V2V Channel (LOS/NLOS)</option>
+                <option value="legacy">Legacy (Distance-Only)</option>
+              </select>
+              <div id="v2v-status" class="text-xs text-muted-foreground/60 hidden">
+                <div class="flex justify-between">
+                  <span>LOS Links:</span>
+                  <span id="v2v-los-count" class="text-green-400">0</span>
+                </div>
+                <div class="flex justify-between">
+                  <span>NLOS Links:</span>
+                  <span id="v2v-nlos-count" class="text-yellow-400">0</span>
+                </div>
+              </div>
+            </div>
             <!-- Crypto Auth Section -->
             <div class="space-y-2 pt-2 border-t border-border/50">
               <div class="flex items-center justify-between">

@@ -31,6 +31,7 @@ from .base import (
 from .formation import FORMATION_TYPES, FormationGenerator
 from .jamming_response import JammingResponse
 from .path_planning import PATH_ALGORITHMS, PathPlanner
+from .v2v_channel import V2VChannelModel, get_channel_model
 
 # Try to import config parameters
 try:
@@ -176,6 +177,10 @@ class UnifiedController(MultiVehicleController):
         )
         self.jamming_handler = JammingResponse()
 
+        # V2V channel model (LOS/NLOS, path loss, fading)
+        self._channel_model: V2VChannelModel = get_channel_model()
+        self.use_v2v_channel = True  # Toggle: True = realistic model, False = legacy aij*gij
+
         # State tracking
         self.formation_converged = False
         self.convergence_threshold = 20  # iterations of stable Jn
@@ -292,20 +297,39 @@ class UnifiedController(MultiVehicleController):
         # =====================================================================
         # COMMUNICATION-AWARE FORMATION CONTROL
         # =====================================================================
+
+        # Precompute obstacle geometry for V2V channel model
+        _obs_centers = []
+        _obs_radii = []
+        for zone in jamming_zones:
+            if zone.active:
+                _obs_centers.append(zone.center)
+                _obs_radii.append(zone.radius)
+        obs_centers_arr = np.array(_obs_centers) if _obs_centers else np.empty((0, 3))
+        obs_radii_arr = np.array(_obs_radii) if _obs_radii else np.empty(0)
+
         if self.formation_type == "communication_aware":
             for i in range(n):
                 for j in range(n):
                     if i == j:
                         continue
 
-                    # Calculate distance
                     rij = calculate_distance(positions[i], positions[j])
 
-                    # Calculate communication quality metrics
-                    aij = calculate_aij(self.alpha, self.delta, rij, self.r0, self.v)
-                    gij = calculate_gij(rij, self.r0)
+                    # --- V2V Channel Model (realistic) or legacy aij*gij ---
+                    if self.use_v2v_channel:
+                        channel_quality = self._channel_model.compute_pairwise_quality(
+                            i, j, positions[i], positions[j],
+                            positions, obs_centers_arr, obs_radii_arr,
+                        )
+                        # Use channel quality as the base communication metric
+                        aij = channel_quality
+                        gij = 1.0  # Absorbed into channel model
+                    else:
+                        aij = calculate_aij(self.alpha, self.delta, rij, self.r0, self.v)
+                        gij = calculate_gij(rij, self.r0)
 
-                    # Calculate rho_ij (derivative) only if neighbor
+                    # rho_ij (derivative for gradient-based formation control)
                     if aij >= self.PT:
                         rho_ij = calculate_rho_ij(self.beta, self.v, rij, self.r0)
                     else:
@@ -319,27 +343,21 @@ class UnifiedController(MultiVehicleController):
                     else:
                         eij = np.zeros(3)
 
-                    # Apply jamming degradation to communication quality (paper's model)
-                    # φ'_ij = φ(r_ij) × D_i × D_j
-                    # Where D_i and D_j are degradation factors from jamming zones
+                    # Apply jamming degradation: φ'_ij = φ(r_ij) * D_i * D_j
                     D_i = 1.0
                     D_j = 1.0
                     for zone in jamming_zones:
                         if zone.active:
                             D_i *= zone.get_degradation_factor(positions[i].tolist())
                             D_j *= zone.get_degradation_factor(positions[j].tolist())
-                    
-                    # Record matrices with degraded communication quality
-                    phi_rij = gij * aij * D_i * D_j  # Degraded by jamming
+
+                    phi_rij = gij * aij * D_i * D_j
                     self._comm_matrix[i, j] = phi_rij
                     self._dist_matrix[i, j] = rij
-                    self._neighbor_matrix[i, j] = aij * D_i * D_j  # Also degrade neighbor metric
+                    self._neighbor_matrix[i, j] = aij * D_i * D_j
 
-                    # Formation control input: rho_ij * eij
-                    # Before convergence: prioritize formation
-                    # After convergence: significantly reduce formation weight to allow destination progress
                     if self.formation_converged:
-                        formation_weight = 0.15  # Much reduced after convergence
+                        formation_weight = 0.15
                     else:
                         formation_weight = 1.0
 
@@ -387,10 +405,18 @@ class UnifiedController(MultiVehicleController):
                     if i == j:
                         continue
                     rij = calculate_distance(positions[i], positions[j])
-                    aij = calculate_aij(self.alpha, self.delta, rij, self.r0, self.v)
-                    gij = calculate_gij(rij, self.r0)
 
-                    # Apply jamming degradation to communication quality (paper's model)
+                    if self.use_v2v_channel:
+                        channel_quality = self._channel_model.compute_pairwise_quality(
+                            i, j, positions[i], positions[j],
+                            positions, obs_centers_arr, obs_radii_arr,
+                        )
+                        aij = channel_quality
+                        gij = 1.0
+                    else:
+                        aij = calculate_aij(self.alpha, self.delta, rij, self.r0, self.v)
+                        gij = calculate_gij(rij, self.r0)
+
                     D_i = 1.0
                     D_j = 1.0
                     for zone in jamming_zones:
@@ -398,9 +424,9 @@ class UnifiedController(MultiVehicleController):
                             D_i *= zone.get_degradation_factor(positions[i].tolist())
                             D_j *= zone.get_degradation_factor(positions[j].tolist())
 
-                    self._comm_matrix[i, j] = gij * aij * D_i * D_j  # Degraded by jamming
+                    self._comm_matrix[i, j] = gij * aij * D_i * D_j
                     self._dist_matrix[i, j] = rij
-                    self._neighbor_matrix[i, j] = aij * D_i * D_j  # Also degrade neighbor metric
+                    self._neighbor_matrix[i, j] = aij * D_i * D_j
 
         # Calculate performance indicators
         Jn = calculate_Jn(self._comm_matrix, self._neighbor_matrix, self.PT)
@@ -1148,19 +1174,35 @@ class UnifiedController(MultiVehicleController):
         return dest_control + avoidance
 
     def _check_convergence(self):
-        """Check if formation has converged based on Jn stabilizing."""
+        """
+        Check if formation has converged based on Jn stabilizing.
+
+        When the V2V channel model is active, stochastic fading causes Jn to
+        fluctuate every tick, so exact equality never holds.  Use a variance-
+        based check instead: converge when the standard deviation of recent Jn
+        values is small relative to the mean.
+        """
         if len(self.Jn_history) < self.convergence_threshold:
             return
 
         recent = self.Jn_history[-self.convergence_threshold:]
 
-        # Check if Jn has stabilized (all values within small tolerance)
-        rounded = [round(x, 4) for x in recent]
-        if len(set(rounded)) == 1:
-            if not self.formation_converged:
-                print(f"[Controller] Formation converged! Jn={recent[-1]:.4f}")
-                print("[Controller] Now moving toward destination...")
-                self.formation_converged = True
+        if self.use_v2v_channel:
+            mean_jn = np.mean(recent)
+            std_jn = np.std(recent)
+            # Converge when std < 5% of mean (or absolute < 0.02)
+            if mean_jn > 0.01 and (std_jn < 0.05 * mean_jn or std_jn < 0.02):
+                if not self.formation_converged:
+                    print(f"[Controller] Formation converged (V2V)! Jn={mean_jn:.4f} std={std_jn:.4f}")
+                    print("[Controller] Now moving toward destination...")
+                    self.formation_converged = True
+        else:
+            rounded = [round(x, 4) for x in recent]
+            if len(set(rounded)) == 1:
+                if not self.formation_converged:
+                    print(f"[Controller] Formation converged! Jn={recent[-1]:.4f}")
+                    print("[Controller] Now moving toward destination...")
+                    self.formation_converged = True
 
     def _update_formation_state(self, agent_ids: list[str], positions: np.ndarray):
         """Update cached formation state."""
@@ -1343,13 +1385,23 @@ class UnifiedController(MultiVehicleController):
                 # Show links if there's any meaningful communication (quality > 0.3)
                 # or if agents are close enough to potentially communicate
                 if quality > 0.3 or aij > 0.5:
-                    links.append({
+                    link_info = {
                         "from": agent_ids[i],
                         "to": agent_ids[j],
                         "quality": quality,
                         "distance": float(self._dist_matrix[i, j]) if self._dist_matrix is not None else 0,
-                        "strong": aij >= self.PT,  # True if above perception threshold
-                    })
+                        "strong": aij >= self.PT,
+                    }
+                    # Include V2V channel link type if available
+                    if self.use_v2v_channel:
+                        link_key = (min(i, j), max(i, j))
+                        link_states = self._channel_model.get_link_states()
+                        if link_key in link_states:
+                            ls = link_states[link_key]
+                            link_info["link_type"] = ls.link_type.value
+                            link_info["path_loss_db"] = round(ls.path_loss_db, 1)
+                            link_info["snr_db"] = round(ls.snr_db, 1)
+                    links.append(link_info)
 
         # #region agent log
         _log_entry2 = {
